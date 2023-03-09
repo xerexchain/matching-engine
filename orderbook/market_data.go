@@ -1,4 +1,9 @@
-package market
+package orderbook
+
+import (
+	"reflect"
+	"time"
+)
 
 const (
 	L2Size = 32
@@ -12,12 +17,15 @@ type L2MarketData interface {
 
 // TODO merge to Ask and Bid
 type l2MarketData struct {
-	askPrices  []int64
-	askVolumes []int64
-	askOrders  []int64
-	bidPrices  []int64
-	bidVolumes []int64
-	bidOrders  []int64
+	askPrices    []int64
+	askVolumes   []int64
+	askOrders    []int64
+	bidPrices    []int64
+	bidVolumes   []int64
+	bidOrders    []int64
+	timestamp    time.Time
+	referenceSeq int64
+	_            struct{}
 }
 
 func (l *l2MarketData) TotalOrderBookVolumeAsk() int64 {
@@ -38,6 +46,15 @@ func (l *l2MarketData) TotalOrderBookVolumeBid() int64 {
 	}
 
 	return t
+}
+
+func (l *l2MarketData) Equals(other *l2MarketData) bool {
+	return reflect.DeepEqual(l.askPrices, other.askPrices) &&
+		reflect.DeepEqual(l.askVolumes, other.askVolumes) &&
+		reflect.DeepEqual(l.askOrders, other.askOrders) &&
+		reflect.DeepEqual(l.bidPrices, other.bidPrices) &&
+		reflect.DeepEqual(l.bidVolumes, other.bidVolumes) &&
+		reflect.DeepEqual(l.bidOrders, other.bidOrders)
 }
 
 func NewL2MarketData(askSize, bidSize int) L2MarketData {
