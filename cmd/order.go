@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"github.com/xerexchain/matching-engine/cmd/result_code"
-	"github.com/xerexchain/matching-engine/market"
+	"github.com/xerexchain/matching-engine/orderbook"
 	"github.com/xerexchain/matching-engine/matcher/event"
 	"github.com/xerexchain/matching-engine/order"
 )
@@ -20,7 +20,7 @@ type orderCommand struct {
 	// for CANCEL/MOVE contains original order action (filled by orderbook)
 	orderAction order.Action
 
-	symbol int
+	symbol int32
 	price  int64
 	size   int64
 
@@ -28,18 +28,19 @@ type orderCommand struct {
 	reserveBidPrice int64
 
 	timestamp  int64
-	userCookie int
+	userCookie int32
 
 	// filled by grouping processor:
 	eventsGroup  int64
-	serviceFlags int
+	serviceFlags int32
 
 	// can also be used for saving intermediate state
 	resultCode resultcode.ResultCode
 
 	tradeEvent event.TradeEvent
 
-	marketData market.L2MarketData
+	marketData orderbook.L2MarketData
+	_         struct{}
 }
 
 // No removing/revoking

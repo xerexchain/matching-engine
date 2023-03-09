@@ -1,6 +1,6 @@
 package order
 
-type Type int
+type Type int8
 
 const (
 	// Good till Cancel - equivalent to regular limit order

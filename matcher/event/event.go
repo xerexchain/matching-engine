@@ -14,14 +14,14 @@ type TradeEvent interface {
 	Next() TradeEvent
 	SetNext(next TradeEvent)
 	FindTail() TradeEvent
-	ChainSize() int
+	ChainSize() int32
 	HashCode() uint64
 	String() string
 }
 
 type tradeEvent struct {
 	Type    `hash:"ignore"`
-	Section int
+	Section int32
 
 	// TODO join (requires 11+ bits)
 	// false, except when activeOrder is completely filled, removed or rejected
@@ -48,6 +48,7 @@ type tradeEvent struct {
 	BbidderHoldPrice int64
 
 	Nxt TradeEvent
+	_         struct{}
 }
 
 func (t *tradeEvent) Next() TradeEvent {
@@ -68,8 +69,8 @@ func (t *tradeEvent) FindTail() TradeEvent {
 	return tail
 }
 
-func (t *tradeEvent) ChainSize() int {
-	size := 1
+func (t *tradeEvent) ChainSize() int32 {
+	var size int32 = 1
 	var tail TradeEvent = t
 
 	for tail.Next() != nil {
@@ -96,7 +97,7 @@ func (t *tradeEvent) String() string {
 	return string(out)
 }
 
-func CreateEventChian(chainSize int) TradeEvent {
+func CreateEventChian(chainSize int32) TradeEvent {
 	head := NewTradeEvent()
 	prev := head
 
