@@ -1,6 +1,6 @@
 package event
 
-type Type int
+type Type int8
 
 const (
 	// Trade event
