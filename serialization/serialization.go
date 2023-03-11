@@ -3,7 +3,13 @@ package serialization
 import (
 	"bytes"
 	"encoding/binary"
+
+	"github.com/emirpasic/gods/maps/linkedhashmap"
 )
+
+type Marshalable interface {
+	Marshal(out *bytes.Buffer) error
+}
 
 func UnmarshalInt32Int64(in *bytes.Buffer) (interface{}, error) {
 	var size int32
@@ -34,7 +40,10 @@ func UnmarshalInt32Int64(in *bytes.Buffer) (interface{}, error) {
 }
 
 // TODO Ref: duplicate code
-func UnmarshalInt32Interface(in *bytes.Buffer, f func(*bytes.Buffer) (interface{}, error)) (interface{}, error) {
+func UnmarshalInt32Interface(
+	in *bytes.Buffer,
+	f func(*bytes.Buffer) (interface{}, error),
+) (interface{}, error) {
 	var size int32
 
 	if err := binary.Read(in, binary.LittleEndian, &size); err != nil {
@@ -63,7 +72,10 @@ func UnmarshalInt32Interface(in *bytes.Buffer, f func(*bytes.Buffer) (interface{
 	return res, nil
 }
 
-func UnmarshalInt64Interface(in *bytes.Buffer, f func(*bytes.Buffer) (interface{}, error)) (interface{}, error) {
+func UnmarshalInt64Interface(
+	in *bytes.Buffer,
+	f func(*bytes.Buffer) (interface{}, error),
+) (interface{}, error) {
 	var size int32
 
 	if err := binary.Read(in, binary.LittleEndian, &size); err != nil {
@@ -92,11 +104,44 @@ func UnmarshalInt64Interface(in *bytes.Buffer, f func(*bytes.Buffer) (interface{
 	return res, nil
 }
 
+// TODO rename, duplicate code
+func UnmarshalInt64InterfaceLinkedHashMap(
+	in *bytes.Buffer,
+	f func(*bytes.Buffer) (interface{}, error),
+) (interface{}, error) {
+	var size int32
+
+	if err := binary.Read(in, binary.LittleEndian, &size); err != nil {
+		return nil, err
+	}
+
+	res := linkedhashmap.New()
+
+	var k int64
+
+	for size > 0 {
+		if err := binary.Read(in, binary.LittleEndian, &k); err != nil {
+			return nil, err
+		}
+
+		v, err := f(in)
+
+		if err != nil {
+			return nil, err
+		}
+
+		res.Put(k, v)
+		size--
+	}
+
+	return res, nil
+}
+
 func MarshalInt32Int64(in interface{}, out *bytes.Buffer) error {
 	m := in.(map[int32]int64)
-	numItems := int32(len(m))
+	size := int32(len(m))
 
-	if err := binary.Write(out, binary.LittleEndian, numItems); err != nil {
+	if err := binary.Write(out, binary.LittleEndian, size); err != nil {
 		return err
 	}
 
@@ -114,11 +159,15 @@ func MarshalInt32Int64(in interface{}, out *bytes.Buffer) error {
 }
 
 // TODO Ref: duplicate code
-func MarshalInt32Interface(in interface{}, out *bytes.Buffer, f func(interface{}, *bytes.Buffer) error) error {
+func MarshalInt32Interface(
+	in interface{},
+	out *bytes.Buffer,
+	f func(interface{}, *bytes.Buffer) error,
+) error {
 	m := in.(map[int32]interface{})
-	numItems := int32(len(m))
+	size := int32(len(m))
 
-	if err := binary.Write(out, binary.LittleEndian, numItems); err != nil {
+	if err := binary.Write(out, binary.LittleEndian, size); err != nil {
 		return err
 	}
 
@@ -135,11 +184,15 @@ func MarshalInt32Interface(in interface{}, out *bytes.Buffer, f func(interface{}
 	return nil
 }
 
-func MarshalInt64Interface(in interface{}, out *bytes.Buffer, f func(interface{}, *bytes.Buffer) error) error {
+func MarshalInt64Interface(
+	in interface{},
+	out *bytes.Buffer,
+	f func(interface{}, *bytes.Buffer) error,
+) error {
 	m := in.(map[int64]interface{})
-	numItems := int32(len(m))
+	size := int32(len(m))
 
-	if err := binary.Write(out, binary.LittleEndian, numItems); err != nil {
+	if err := binary.Write(out, binary.LittleEndian, size); err != nil {
 		return err
 	}
 

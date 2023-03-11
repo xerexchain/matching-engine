@@ -3,38 +3,61 @@ package symbol
 import (
 	"bytes"
 	"encoding/binary"
-	"time"
 
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/xerexchain/matching-engine/serialization"
+	"github.com/xerexchain/matching-engine/state"
 )
 
-type symbol struct {
-	Id int32
-	Type
-	Base       int32
-	Quote      int32 // counter currency (OR futures contract currency)
-	BaseScale  int64 // lot size in base currency units
-	QuoteScale int64 // step size in quote currency units
-
-	// fees per lot in quote? currency units
-	TakerFee int64 // TODO check invariant: taker fee is not less than maker fee
-	MakerFee int64
-
-	// margin settings (for type=FUTURES_CONTRACT only)
-	MarginBuy  int64
-	MarginSell int64
-	_          struct{}
+// TODO equals overriden
+type Symbol interface {
+	state.Hashable
+	serialization.Marshalable
 }
 
-type symbolBatchPayload struct {
-	rawSymbols *bytes.Buffer
-	timestamp  time.Time
-	_          struct{}
+// TODO equals overriden
+type FutureContractSymbol interface {
+	Symbol
+	MarginBuy() int64
+	MarginSell() int64
+}
+
+// TODO This is incompatible with exchange-core: `SymbolType.of(bytes.readByte());`
+// TODO This is incompatible with exchange-core: `bytes.writeByte(type.getCode());`
+// TODO Sym is *symbol, not symbol
+// TODO equals overriden
+// TODO complete implementation
+type OptionSymbol interface {
+	Symbol
+}
+
+type symbol struct {
+	Id            int32
+	BaseCurrency  int32
+	QuoteCurrency int32
+	BaseScaleK    int64 // lot size
+	QuoteScaleK   int64 // step size
+
+	// TODO fees per lot in quote? currency units
+	TakerFee int64 // TODO check invariant: taker fee is not less than maker fee
+	MakerFee int64
+	_        struct{}
+}
+
+type futureContractSymbol struct {
+	Sym *symbol
+
+	MarginBuy_  int64 // quote currency
+	MarginSell_ int64 // quote currency
+	_           struct{}
+}
+
+type optionSymbol struct {
+	_ struct{}
 }
 
 func (s *symbol) Hash() uint64 {
-	hash, err := hashstructure.Hash(s, hashstructure.FormatV2, nil)
+	hash, err := hashstructure.Hash(*s, hashstructure.FormatV2, nil)
 
 	if err != nil {
 		panic(err)
@@ -43,39 +66,139 @@ func (s *symbol) Hash() uint64 {
 	return hash
 }
 
-func Marshal(in interface{}, out *bytes.Buffer) error {
+func (s *symbol) Marshal(out *bytes.Buffer) error {
+	return MarshalSymbol(s, out)
+}
+
+func (f *futureContractSymbol) MarginBuy() int64 {
+	return f.MarginBuy_
+}
+
+func (f *futureContractSymbol) MarginSell() int64 {
+	return f.MarginSell_
+}
+
+// TODO Sym is *symbol, not symbol
+func (f *futureContractSymbol) Hash() uint64 {
+	hash, err := hashstructure.Hash(*f, hashstructure.FormatV2, nil)
+
+	if err != nil {
+		panic(err)
+	}
+
+	return hash
+}
+
+func (f *futureContractSymbol) Marshal(out *bytes.Buffer) error {
+	return MarshalFutureContractSymbol(f, out)
+}
+
+// TODO This is incompatible with exchange-core: `bytes.writeByte(type.getCode());`
+func MarshalSymbol(in interface{}, out *bytes.Buffer) error {
 	s := in.(*symbol)
 
-	if err := binary.Write(out, binary.LittleEndian, *s); err != nil {
+	if err := binary.Write(out, binary.LittleEndian, s.Id); err != nil {
+		return err
+	}
+
+	if err := binary.Write(out, binary.LittleEndian, s.BaseCurrency); err != nil {
+		return err
+	}
+
+	if err := binary.Write(out, binary.LittleEndian, s.QuoteCurrency); err != nil {
+		return err
+	}
+
+	if err := binary.Write(out, binary.LittleEndian, s.BaseScaleK); err != nil {
+		return err
+	}
+
+	if err := binary.Write(out, binary.LittleEndian, s.QuoteScaleK); err != nil {
+		return err
+	}
+
+	if err := binary.Write(out, binary.LittleEndian, s.TakerFee); err != nil {
+		return err
+	}
+
+	if err := binary.Write(out, binary.LittleEndian, s.MakerFee); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func Unmarshal(in *bytes.Buffer) (interface{}, error) {
-	s := &symbol{}
+func MarshalFutureContractSymbol(in interface{}, out *bytes.Buffer) error {
+	f := in.(*futureContractSymbol)
 
-	if err := binary.Read(in, binary.LittleEndian, s); err != nil {
+	if err := f.Sym.Marshal(out); err != nil {
+		return err
+	}
+
+	if err := binary.Write(out, binary.LittleEndian, f.MarginBuy_); err != nil {
+		return err
+	}
+
+	if err := binary.Write(out, binary.LittleEndian, f.MarginSell_); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// TODO This is incompatible with exchange-core: `SymbolType.of(bytes.readByte());`
+func UnmarshalSymbol(in *bytes.Buffer) (interface{}, error) {
+	s := symbol{}
+
+	if err := binary.Read(in, binary.LittleEndian, &(s.Id)); err != nil {
 		return nil, err
 	}
 
-	return s, nil
+	if err := binary.Read(in, binary.LittleEndian, &(s.BaseCurrency)); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(in, binary.LittleEndian, &(s.QuoteCurrency)); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(in, binary.LittleEndian, &(s.BaseScaleK)); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(in, binary.LittleEndian, &(s.QuoteScaleK)); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(in, binary.LittleEndian, &(s.TakerFee)); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(in, binary.LittleEndian, &(s.MakerFee)); err != nil {
+		return nil, err
+	}
+
+	return &s, nil
 }
 
-func MarshalSymbols(in map[int32]*symbol, out *bytes.Buffer) error {
-	return serialization.MarshalInt32Interface(in, out, Marshal)
-}
+func UnmarshalFutureContractSymbol(in *bytes.Buffer) (interface{}, error) {
+	f := futureContractSymbol{}
 
-func UnmarshalSymbols(in *bytes.Buffer) (interface{}, error) {
-	res, err := serialization.UnmarshalInt32Interface(
-		in,
-		Unmarshal,
-	)
+	s, err := UnmarshalSymbol(in)
 
 	if err != nil {
 		return nil, err
 	}
 
-	return res, nil
+	f.Sym = s.(*symbol)
+
+	if err := binary.Read(in, binary.LittleEndian, &(f.MarginBuy_)); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(in, binary.LittleEndian, &(f.MarginSell_)); err != nil {
+		return nil, err
+	}
+
+	return &f, nil
 }
