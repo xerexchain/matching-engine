@@ -1,20 +1,23 @@
 package state
 
-import "time"
-
-type payload struct {
+// TODO EqualsAndHashCode
+// TODO rename
+type persistPayload struct {
 	dumpId    int64
 	seal      bool
-	timestamp time.Time
+	timestamp int64
 	_         struct{}
 }
 
+// TODO EqualsAndHashCode
+// TODO rename
 type resetPayload struct {
-	timestamp time.Time
+	timestamp int64
 	_         struct{}
 }
 
+// TODO EqualsAndHashCode
 type nopPayload struct {
-	timestamp time.Time
+	timestamp int64
 	_         struct{}
 }
