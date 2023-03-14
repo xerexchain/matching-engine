@@ -1,4 +1,4 @@
-package orderbook
+package event
 
 // TODO move activeOrderCompleted, section into the order?
 // TODO REDUCE needs remaining size (can write into size), bidderHoldPrice - can write into price
@@ -44,16 +44,17 @@ type BinaryEvent interface {
 	Event
 }
 
+// TODO redundant fields?
 // TODO equals and hashCode overriden
 type tradeEvent struct {
 	makerOrderId        int64
-	makerUserId         int64 // TODO is it redundant?
-	makerOrderCompleted bool  // TODO is it redundant?
+	makerUserId         int64
+	makerOrderCompleted bool
 	takerOrderCompleted bool
 	tradedPrice         int64 // actual price of the deal (from maker order)
 	tradedQuantity      int64 // traded quantity, transfered from maker to taker
 	bidderHoldPrice     int64 // frozen price from BID order owner (depends on activeOrderAction) // TODO doc
-	next                TradeEvent
+	next                Event
 	_                   struct{}
 }
 
@@ -69,16 +70,40 @@ type cancelEvent struct {
 	_ struct{}
 }
 
+// TODO redundant fields?
 // TODO equals and hashCode overriden
-// TODO complete impl
 type rejectEvent struct {
-	_ struct{}
+	takerOrderId     int64
+	rejectedQuantity int64
+	next             Event
 }
 
 // TODO equals and hashCode overriden
 // TODO complete impl
 type binaryEvent struct {
 	_ struct{}
+}
+
+func findTail(e Event) Event {
+	var tail Event = e
+
+	for tail.Next() != nil {
+		tail = tail.Next()
+	}
+
+	return tail
+}
+
+func chainSize(e Event) int32 {
+	var size int32 = 1
+	var tail Event = e
+
+	for tail.Next() != nil {
+		tail = tail.Next()
+		size++
+	}
+
+	return size
 }
 
 func (t *tradeEvent) Next() Event {
@@ -90,27 +115,30 @@ func (t *tradeEvent) SetNext(next Event) {
 }
 
 func (t *tradeEvent) FindTail() Event {
-	var tail TradeEvent = t
-
-	for tail.Next() != nil {
-		tail = tail.Next()
-	}
-
-	return tail
+	return findTail(t)
 }
 
 func (t *tradeEvent) ChainSize() int32 {
-	var size int32 = 1
-	var tail TradeEvent = t
-
-	for tail.Next() != nil {
-		tail = tail.Next()
-		size++
-	}
-
-	return size
+	return chainSize(t)
 }
 
+func (r *rejectEvent) Next() Event {
+	return r.next
+}
+
+func (r *rejectEvent) SetNext(next Event) {
+	r.next = next
+}
+
+func (r *rejectEvent) FindTail() Event {
+	return findTail(r)
+}
+
+func (r *rejectEvent) ChainSize() int32 {
+	return chainSize(r)
+}
+
+// TODO unused?
 func CreateTradeEventChain(chainSize int32) TradeEvent {
 	head := &tradeEvent{}
 	prev := head
@@ -142,5 +170,15 @@ func NewTradeEvent(
 		takerOrderCompleted: takerOrderCompleted,
 		tradedQuantity:      tradedQuantity,
 		bidderHoldPrice:     bidderHoldPrice,
+	}
+}
+
+func NewRejectEvent(
+	takerOrderId int64,
+	rejectedQuantity int64,
+) RejectEvent {
+	return &rejectEvent{
+		takerOrderId:     takerOrderId,
+		rejectedQuantity: rejectedQuantity,
 	}
 }
