@@ -208,3 +208,30 @@ func MarshalInt64Interface(
 
 	return nil
 }
+
+func MarshalInt64InterfaceLinkedHashMap(
+	in interface{},
+	out *bytes.Buffer,
+	f func(interface{}, *bytes.Buffer) error,
+) error {
+	m := in.(*linkedhashmap.Map)
+	size := int32(m.Size())
+
+	if err := binary.Write(out, binary.LittleEndian, size); err != nil {
+		return err
+	}
+
+	for _, k := range m.Keys() {
+		v, _ := m.Get(k)
+
+		if err := binary.Write(out, binary.LittleEndian, k.(int64)); err != nil {
+			return err
+		}
+
+		if err := f(v, out); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
