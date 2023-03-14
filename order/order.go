@@ -163,7 +163,7 @@ func MarshalOrder(in interface{}, out *bytes.Buffer) error {
 	return nil
 }
 
-func UnMarshal(in *bytes.Buffer) (interface{}, error) {
+func UnMarshalOrder(in *bytes.Buffer) (interface{}, error) {
 	o := order{}
 
 	if err := binary.Read(in, binary.LittleEndian, &(o.Id_)); err != nil {
