@@ -7,7 +7,7 @@ import (
 	"math"
 
 	"github.com/mitchellh/hashstructure/v2"
-	"github.com/xerexchain/matching-engine/order"
+	"github.com/xerexchain/matching-engine/order/action"
 	riskengine "github.com/xerexchain/matching-engine/process/risk_engine"
 	"github.com/xerexchain/matching-engine/serialization"
 	"github.com/xerexchain/matching-engine/state"
@@ -36,8 +36,8 @@ type MarginPosition interface {
 	serialization.Marshalable
 	SetUserId(int64)
 	IsEmpty() bool
-	PendingHold(action order.Action, quantity int64)
-	PendingRelease(action order.Action, quantity int64)
+	PendingHold(action.Action, int64)
+	PendingRelease(action.Action, int64)
 	EstimateProfit(
 		symbol.FutureContractSymbol,
 		riskengine.LastPriceCacheRecord,
@@ -46,14 +46,14 @@ type MarginPosition interface {
 		symbol.FutureContractSymbol,
 	) int64
 	CalculateRequiredMarginForOrder(
-		sym symbol.FutureContractSymbol,
-		action order.Action,
-		quantity int64,
+		symbol.FutureContractSymbol,
+		action.Action,
+		int64,
 	) int64
 	UpdatePositionForMarginTrade(
-		action order.Action,
-		quantity int64,
-		price int64,
+		action.Action,
+		int64,
+		int64,
 	) int64
 	Reset()
 	ValidateInternalState()
@@ -76,16 +76,16 @@ type marginPosition struct {
 	_                   struct{}
 }
 
-func (p Direction) IsOppositeToAction(action order.Action) bool {
-	return (p == Long && action == order.Ask) || (p == Short && action == order.Bid)
+func (p Direction) IsOppositeToAction(act action.Action) bool {
+	return (p == Long && act == action.Ask) || (p == Short && act == action.Bid)
 }
 
-func (p Direction) IsSameAsAction(action order.Action) bool {
-	return (p == Long && action == order.Bid) || (p == Short && action == order.Ask)
+func (p Direction) IsSameAsAction(act action.Action) bool {
+	return (p == Long && act == action.Bid) || (p == Short && act == action.Ask)
 }
 
-func DirectionFromAction(act order.Action) Direction {
-	if act == order.Bid {
+func DirectionFromAction(act action.Action) Direction {
+	if act == action.Bid {
 		return Long
 	} else {
 		return Short
@@ -101,8 +101,8 @@ func (mp *marginPosition) IsEmpty() bool {
 	return mp.Direction == Empty && mp.PendingSellQuantity == 0 && mp.PendingBuyQuantity == 0
 }
 
-func (mp *marginPosition) PendingHold(action order.Action, quantity int64) {
-	if action == order.Ask {
+func (mp *marginPosition) PendingHold(act action.Action, quantity int64) {
+	if act == action.Ask {
 		mp.PendingSellQuantity += quantity
 	} else {
 		mp.PendingBuyQuantity += quantity
@@ -111,8 +111,8 @@ func (mp *marginPosition) PendingHold(action order.Action, quantity int64) {
 	// TODO handle overflow
 }
 
-func (mp *marginPosition) PendingRelease(action order.Action, quantity int64) {
-	if action == order.Ask {
+func (mp *marginPosition) PendingRelease(act action.Action, quantity int64) {
+	if act == action.Ask {
 		mp.PendingSellQuantity -= quantity
 	} else {
 		mp.PendingBuyQuantity -= quantity
@@ -190,7 +190,7 @@ func (mp *marginPosition) CalculateRequiredMarginForFutures(
 // otherwise full margin for symbol position if order placed/executed
 func (mp *marginPosition) CalculateRequiredMarginForOrder(
 	sym symbol.FutureContractSymbol,
-	action order.Action,
+	act action.Action,
 	quantity int64,
 ) int64 {
 	marginBuy, MarginSell := mp.M(sym)
@@ -202,7 +202,7 @@ func (mp *marginPosition) CalculateRequiredMarginForOrder(
 		currMargin = MarginSell
 	}
 
-	if action == order.Bid {
+	if act == action.Bid {
 		marginBuy += sym.MarginBuy() * quantity
 	} else {
 		MarginSell += sym.MarginSell() * quantity
@@ -226,30 +226,30 @@ func (mp *marginPosition) CalculateRequiredMarginForOrder(
 // Update position for one user
 // return opened quantity
 func (mp *marginPosition) UpdatePositionForMarginTrade(
-	action order.Action,
+	act action.Action,
 	quantity int64,
 	price int64,
 ) int64 {
 	// 1. Un-hold pending quantity
-	mp.PendingRelease(action, quantity)
+	mp.PendingRelease(act, quantity)
 
 	// 2. Reduce opposite position accordingly (if exists)
-	quantityToOpen := mp.CloseCurrPositionFutures(action, quantity, price)
+	quantityToOpen := mp.CloseCurrPositionFutures(act, quantity, price)
 
 	// 3. Increase forward position accordingly (if quantity left in the trading event)
 	if quantityToOpen > 0 {
-		mp.OpenPositionMargin(action, quantityToOpen, price)
+		mp.OpenPositionMargin(act, quantityToOpen, price)
 	}
 
 	return quantityToOpen
 }
 
 func (mp *marginPosition) CloseCurrPositionFutures(
-	action order.Action,
+	act action.Action,
 	tradeQuantity int64,
 	tradePrice int64,
 ) int64 {
-	if mp.Direction == Empty || mp.Direction == DirectionFromAction(action) {
+	if mp.Direction == Empty || mp.Direction == DirectionFromAction(act) {
 		// nothing to close
 		return tradeQuantity
 	}
@@ -274,13 +274,13 @@ func (mp *marginPosition) CloseCurrPositionFutures(
 }
 
 func (mp *marginPosition) OpenPositionMargin(
-	action order.Action,
+	act action.Action,
 	quantityToOpen int64,
 	tradePrice int64,
 ) {
 	mp.OpenQuantity += quantityToOpen
 	mp.OpenPriceSum += quantityToOpen * tradePrice
-	mp.Direction = DirectionFromAction(action)
+	mp.Direction = DirectionFromAction(act)
 
 	mp.ValidateInternalState() // TODO comment or not?
 }
@@ -318,7 +318,7 @@ func (mp *marginPosition) ValidateInternalState() {
 	}
 
 	if mp.PendingSellQuantity < 0 || mp.PendingBuyQuantity < 0 {
-		log.Panicf("Error: userId %v : pendingSellSize:%v pendingBuySize:%v",
+		log.Panicf("Error: userId %v : pendingSellQuantity:%v pendingBuyQuantity:%v",
 			mp.UserId,
 			mp.PendingSellQuantity,
 			mp.PendingBuyQuantity,

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/mitchellh/hashstructure/v2"
+	"github.com/xerexchain/matching-engine/order/action"
 	"github.com/xerexchain/matching-engine/serialization"
 	"github.com/xerexchain/matching-engine/state"
 )
@@ -21,7 +22,7 @@ type Order interface {
 	Remained() int64
 	Fill(int64)
 	Reduce(int64)
-	Action() Action
+	Action() action.Action
 	ReservedBidPrice() int64
 	Timestamp() int64
 	String() string
@@ -54,7 +55,7 @@ type order struct {
 	Filled_           int64
 	ReservedBidPrice_ int64 // new orders - reserved price for fast moves of GTC bid orders in exchange mode // TODO logic
 	Timestamp_        int64
-	Action_           Action
+	Action_           action.Action
 }
 
 // TODO equals and hashCode overriden, timestamp ignored in equals, statehash impl
@@ -116,7 +117,7 @@ func (o *order) Reduce(quantity int64) {
 	}
 }
 
-func (o *order) Action() Action {
+func (o *order) Action() action.Action {
 	return o.Action_
 }
 
@@ -223,7 +224,7 @@ func UnMarshalOrder(b *bytes.Buffer) (interface{}, error) {
 	if val, err := serialization.UnmarshalInt8(b); err != nil {
 		return nil, err
 	} else {
-		o.Action_ = FromByte(val.(int8))
+		o.Action_ = action.FromByte(val.(int8))
 	}
 
 	if val, err := serialization.UnmarshalInt64(b); err != nil {
@@ -249,7 +250,7 @@ func New(
 	filled int64,
 	reservedBidPrice int64,
 	timestamp int64,
-	action Action,
+	action action.Action,
 ) Order {
 	return &order{
 		Id_:               id,

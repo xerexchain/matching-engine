@@ -16,10 +16,10 @@ const (
 	InvalidPriceStep      ResultCode = -1202
 	UnsupportedSymbolType ResultCode = -1203
 
-	RiskNFS                    ResultCode = -2001
+	RiskNFS                     ResultCode = -2001
 	RiskInvalidReservedBidPrice ResultCode = -2002
-	RiskAskPriceLowerThanFee   ResultCode = -2003
-	RiskMarginTradingDisabled  ResultCode = -2004
+	RiskAskPriceLowerThanFee    ResultCode = -2003
+	RiskMarginTradingDisabled   ResultCode = -2004
 
 	MatchingUnknownOrderId         ResultCode = -3002
 	MatchingDuplicateOrderId       ResultCode = -3003
@@ -30,9 +30,9 @@ const (
 
 	MatchingMoveRejectedDifferentPrice   ResultCode = -3040
 	MatchingMoveFailedPriceOverRiskLimit ResultCode = -3041
-	MatchingMoveFailedPriceInvalid ResultCode = -3042 // TODO
+	MatchingMoveFailedPriceInvalid       ResultCode = -3042 // TODO
 
-	MatchingReduceFailedWrongSize ResultCode = -3051
+	MatchingReduceFailedWrongQuantity ResultCode = -3051
 
 	UserMGMTUserAlreadyExists ResultCode = -4001
 

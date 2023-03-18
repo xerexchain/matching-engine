@@ -1,6 +1,8 @@
 package event
 
-import "github.com/xerexchain/matching-engine/order"
+import (
+	"github.com/xerexchain/matching-engine/order/action"
+)
 
 // TODO move activeOrderCompleted, section into the order?
 // TODO REDUCE needs remaining size (can write into size), bidderHoldPrice - can write into price
@@ -58,8 +60,8 @@ type reduceEvent struct {
 	makerOrderId        int64
 	makerOrderCompleted bool
 	price               int64
-	reduceQuantity     int64
-	action              order.Action
+	reduceQuantity      int64
+	action              action.Action
 	next                Event
 	_                   struct{}
 }
@@ -69,7 +71,7 @@ type rejectEvent struct {
 	takerOrderId     int64
 	price            int64
 	rejectedQuantity int64
-	action           order.Action
+	action           action.Action
 	next             Event
 	_                struct{}
 }
@@ -167,13 +169,13 @@ func PrependRejectEvent(
 	orderId int64,
 	price int64,
 	rejectedQuantity int64,
-	action order.Action,
+	act action.Action,
 ) RejectEvent {
 	rejectEvent := NewRejectEvent(
 		orderId,
 		price,
 		rejectedQuantity,
-		action,
+		act,
 	)
 
 	rejectEvent.SetNext(to)
@@ -206,14 +208,14 @@ func NewReduceEvent(
 	makerOrderCompleted bool,
 	price int64,
 	reduceQuantity int64,
-	action order.Action,
+	act action.Action,
 ) ReduceEvent {
 	return &reduceEvent{
 		makerOrderId:        makerOrderId,
 		makerOrderCompleted: makerOrderCompleted,
 		price:               price,
-		reduceQuantity:     reduceQuantity,
-		action:              action,
+		reduceQuantity:      reduceQuantity,
+		action:              act,
 	}
 }
 
@@ -221,12 +223,12 @@ func NewRejectEvent(
 	takerOrderId int64,
 	price int64,
 	rejectedQuantity int64,
-	action order.Action,
+	act action.Action,
 ) RejectEvent {
 	return &rejectEvent{
 		takerOrderId:     takerOrderId,
 		price:            price,
 		rejectedQuantity: rejectedQuantity,
-		action:           action,
+		action:           act,
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/emirpasic/gods/maps/linkedhashmap"
 	"github.com/google/btree"
 	"github.com/xerexchain/matching-engine/order"
+	"github.com/xerexchain/matching-engine/order/action"
 	"github.com/xerexchain/matching-engine/orderbook/event"
 	"github.com/xerexchain/matching-engine/serialization"
 )
@@ -158,7 +159,7 @@ func (n *naiveOrderBucket) Match(
 			removedOrders = append(removedOrders, ord.Id())
 		}
 
-		if ord.Action() == order.Ask {
+		if ord.Action() == action.Ask {
 			bidderHoldPrice = reservedBidPrice
 		} else {
 			bidderHoldPrice = ord.ReservedBidPrice()

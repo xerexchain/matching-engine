@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/btree"
 	"github.com/xerexchain/matching-engine/order"
+	"github.com/xerexchain/matching-engine/order/action"
 	"github.com/xerexchain/matching-engine/orderbook/bucket"
 	"github.com/xerexchain/matching-engine/orderbook/event"
 	resultcode "github.com/xerexchain/matching-engine/result_code"
@@ -67,9 +68,9 @@ type naiveOrderBook struct {
 }
 
 func (n *naiveOrderBook) sameBuckets(
-	act order.Action,
+	act action.Action,
 ) *btree.BTree {
-	if act == order.Ask {
+	if act == action.Ask {
 		return n.askBuckets
 	} else {
 		return n.bidBuckets
@@ -77,9 +78,9 @@ func (n *naiveOrderBook) sameBuckets(
 }
 
 func (n *naiveOrderBook) oppositeBuckets(
-	act order.Action,
+	act action.Action,
 ) *btree.BTree {
-	if act == order.Ask {
+	if act == action.Ask {
 		return n.bidBuckets
 	} else {
 		return n.askBuckets
@@ -113,7 +114,7 @@ func (n *naiveOrderBook) findBucket(
 
 func (n *naiveOrderBook) budgetToFill(
 	toCollect int64,
-	act order.Action,
+	act action.Action,
 ) (int64, int64) {
 	collected := int64(0)
 	budget := int64(0)
@@ -138,7 +139,7 @@ func (n *naiveOrderBook) budgetToFill(
 		return true
 	}
 
-	if act == order.Ask {
+	if act == action.Ask {
 		n.bidBuckets.Descend(f)
 	} else {
 		n.askBuckets.Ascend(f)
@@ -186,7 +187,7 @@ func (n *naiveOrderBook) tryMatchInstantly(
 		return true
 	}
 
-	if ord.Action() == order.Ask {
+	if ord.Action() == action.Ask {
 		n.bidBuckets.AscendGreaterOrEqual(pivot, f)
 	} else {
 		n.askBuckets.DescendLessOrEqual(pivot, f)
@@ -285,8 +286,8 @@ func (n *naiveOrderBook) PlaceFOKBudgetOrder(
 
 	// TODO logic
 	if collected == ord.Remained() || ((ord.Price() == budget) ||
-		((ord.Action() == order.Ask) && (budget <= ord.Price())) ||
-		((ord.Action() == order.Bid) && (budget > ord.Price()))) {
+		((ord.Action() == action.Ask) && (budget <= ord.Price())) ||
+		((ord.Action() == action.Bid) && (budget > ord.Price()))) {
 		return n.tryMatchInstantly(ord)
 	} else {
 		rejectEvent := event.NewRejectEvent(
@@ -326,7 +327,7 @@ func (n *naiveOrderBook) MoveOrder(
 
 	// reserved price risk check for exchange bids
 	// TODO symbolSpec.type == SymbolType.CURRENCY_EXCHANGE_PAIR
-	if ord.Action() == order.Bid && toPrice > ord.ReservedBidPrice() {
+	if ord.Action() == action.Bid && toPrice > ord.ReservedBidPrice() {
 		return &MatcherResult{
 			ResultCode: resultcode.MatchingMoveFailedPriceOverRiskLimit,
 		}
@@ -369,7 +370,7 @@ func (n *naiveOrderBook) ReduceOrder(
 
 	if reduceQuantity <= 0 {
 		return &MatcherResult{
-			ResultCode: resultcode.MatchingReduceFailedWrongSize,
+			ResultCode: resultcode.MatchingReduceFailedWrongQuantity,
 		}
 	}
 

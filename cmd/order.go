@@ -1,10 +1,11 @@
 package cmd
 
 import (
-	"github.com/xerexchain/matching-engine/result_code"
 	"github.com/xerexchain/matching-engine/order"
+	"github.com/xerexchain/matching-engine/order/action"
 	"github.com/xerexchain/matching-engine/orderbook"
 	"github.com/xerexchain/matching-engine/orderbook/event"
+	"github.com/xerexchain/matching-engine/result_code"
 )
 
 type OrderCommand interface {
@@ -18,7 +19,7 @@ type orderCommand struct {
 
 	// required for PLACE_ORDER only;
 	// for CANCEL/MOVE contains original order action (filled by orderbook)
-	orderAction order.Action
+	orderAction action.Action
 
 	symbol int32
 	price  int64

@@ -1,5 +1,7 @@
 package order
 
+import "github.com/xerexchain/matching-engine/order/action"
+
 // TODO EqualsAndHashCode
 // TODO rename
 type placePayload struct {
@@ -10,7 +12,7 @@ type placePayload struct {
 	reservePrice int64
 	symbolId     int32
 	userCookie   int32
-	action       Action
+	action       action.Action
 	t            Type
 	timestamp    int64
 	_            struct{}
