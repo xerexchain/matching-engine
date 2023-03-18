@@ -3,235 +3,264 @@ package serialization
 import (
 	"bytes"
 	"encoding/binary"
+	"reflect"
 
 	"github.com/emirpasic/gods/maps/linkedhashmap"
+	"github.com/google/btree"
 )
 
 type Marshalable interface {
 	Marshal(out *bytes.Buffer) error
 }
 
-func UnmarshalInt32Int64(in *bytes.Buffer) (interface{}, error) {
-	var size int32
+func UnmarshalInt8(b *bytes.Buffer) (interface{}, error) {
+	var res int8
+	err := binary.Read(b, binary.LittleEndian, &res)
 
-	if err := binary.Read(in, binary.LittleEndian, &size); err != nil {
+	return res, err
+}
+
+func MarshalInt8(in interface{}, out *bytes.Buffer) error {
+	return binary.Write(out, binary.LittleEndian, in.(int8))
+}
+
+func UnmarshalInt32(b *bytes.Buffer) (interface{}, error) {
+	var res int32
+	err := binary.Read(b, binary.LittleEndian, &res)
+
+	return res, err
+}
+
+func MarshalInt32(in interface{}, out *bytes.Buffer) error {
+	return binary.Write(out, binary.LittleEndian, in.(int32))
+}
+
+func UnmarshalInt64(b *bytes.Buffer) (interface{}, error) {
+	var res int64
+	err := binary.Read(b, binary.LittleEndian, &res)
+
+	return res, err
+}
+
+func MarshalInt64(in interface{}, out *bytes.Buffer) error {
+	return binary.Write(out, binary.LittleEndian, in.(int64))
+}
+
+func UnmarshalKeyVal(
+	in *bytes.Buffer,
+	f1 func(*bytes.Buffer) (interface{}, error), // key unmarshaler
+	f2 func(*bytes.Buffer) (interface{}, error), // val unmarshaler
+) (interface{}, interface{}, error) {
+	if k, err := f1(in); err != nil {
+		return nil, nil, err
+	} else {
+		if v, err := f2(in); err != nil {
+			return nil, nil, err
+		} else {
+			return k, v, nil
+		}
+	}
+}
+
+func MarshalKeyVal(
+	k interface{},
+	v interface{},
+	out *bytes.Buffer,
+	f1 func(interface{}, *bytes.Buffer) error, // key marshaler
+	f2 func(interface{}, *bytes.Buffer) error, // val marshaler
+) error {
+	if err := f1(k, out); err != nil {
+		return err
+	}
+
+	if err := f2(v, out); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func UnmarshalMap(
+	b *bytes.Buffer,
+	f1 func(*bytes.Buffer) (interface{}, error), // key unmarshaler
+	f2 func(*bytes.Buffer) (interface{}, error), // val unmarshaler
+) (map[interface{}]interface{}, error) {
+	var val interface{}
+	var err error
+
+	if val, err = UnmarshalInt32(b); err != nil {
 		return nil, err
 	}
 
+	size := val.(int32)
+	map_ := make(map[interface{}]interface{}, size)
+
+	for size > 0 {
+		if k, v, err := UnmarshalKeyVal(b, f1, f2); err != nil {
+			return nil, err
+		} else {
+			map_[k] = v
+		}
+
+		size--
+	}
+
+	return map_, nil
+}
+
+func MarshalMap(
+	in interface{},
+	out *bytes.Buffer,
+	f1 func(interface{}, *bytes.Buffer) error, // key marshaler
+	f2 func(interface{}, *bytes.Buffer) error, // val marshaler
+) error {
+	map_ := reflect.ValueOf(in)
+	size := int32(map_.Len())
+
+	if err := MarshalInt32(size, out); err != nil {
+		return err
+	}
+
+	iter := map_.MapRange()
+
+	for iter.Next() {
+		k := iter.Key().Interface()
+		v := iter.Value().Interface()
+
+		if err := MarshalKeyVal(k, v, out, f1, f2); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func UnmarshalLinkedHashMap(
+	b *bytes.Buffer,
+	f1 func(*bytes.Buffer) (interface{}, error), // key unmarshaler
+	f2 func(*bytes.Buffer) (interface{}, error), // val unmarshaler
+) (*linkedhashmap.Map, error) {
+	var val interface{}
+	var err error
+
+	if val, err = UnmarshalInt32(b); err != nil {
+		return nil, err
+	}
+
+	size := val.(int32)
+	linkedMap_ := linkedhashmap.New()
+
+	for size > 0 {
+		if k, v, err := UnmarshalKeyVal(b, f1, f2); err != nil {
+			return nil, err
+		} else {
+			linkedMap_.Put(k, v)
+		}
+
+		size--
+	}
+
+	return linkedMap_, nil
+}
+
+func MarshalLinkedHashMap(
+	linkedMap *linkedhashmap.Map,
+	out *bytes.Buffer,
+	f1 func(interface{}, *bytes.Buffer) error, // key marshaler
+	f2 func(interface{}, *bytes.Buffer) error, // val marshaler
+) error {
+	size := int32(linkedMap.Size())
+
+	if err := MarshalInt32(size, out); err != nil {
+		return err
+	}
+
+	for _, k := range linkedMap.Keys() {
+		v, _ := linkedMap.Get(k)
+
+		if err := MarshalKeyVal(k, v, out, f1, f2); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func UnmarshalBtree(
+	b *bytes.Buffer,
+	f func(*bytes.Buffer) (interface{}, error), // val unmarshaler
+) (*btree.BTree, error) {
+	var val interface{}
+	var err error
+
+	if val, err = UnmarshalInt32(b); err != nil {
+		return nil, err
+	}
+
+	size := val.(int32)
+	btree_ := btree.New(4) // TODO param
+
+	for size > 0 {
+		if v, err := f(b); err != nil {
+			return nil, err
+		} else {
+			btree_.ReplaceOrInsert(v.(btree.Item))
+		}
+
+		size--
+	}
+
+	return btree_, nil
+}
+
+func MarshalBtree(
+	btree_ *btree.BTree,
+	out *bytes.Buffer,
+	f func(interface{}, *bytes.Buffer) error, // val marshaler
+) error {
+	size := int32(btree_.Len())
+
+	if err := MarshalInt32(size, out); err != nil {
+		return err
+	}
+
+	var err error
+
+	btree_.Ascend(func(v btree.Item) bool {
+		if err = f(v, out); err != nil {
+			return false
+		}
+
+		return true
+	})
+
+	return err
+}
+
+func UnmarshalInt32Int64(b *bytes.Buffer) (map[int32]int64, error) {
+	var val interface{}
+	var err error
+
+	if val, err = UnmarshalInt32(b); err != nil {
+		return nil, err
+	}
+
+	size := val.(int32)
 	res := make(map[int32]int64, size)
 
-	var k int32
-	var v int64
-
 	for size > 0 {
-		if err := binary.Read(in, binary.LittleEndian, &k); err != nil {
+		if k, v, err := UnmarshalKeyVal(
+			b,
+			UnmarshalInt32,
+			UnmarshalInt64,
+		); err != nil {
 			return nil, err
+		} else {
+			res[k.(int32)] = v.(int64)
 		}
 
-		if err := binary.Read(in, binary.LittleEndian, &v); err != nil {
-			return nil, err
-		}
-
-		res[k] = v
 		size--
 	}
 
 	return res, nil
-}
-
-// TODO Ref: duplicate code
-func UnmarshalInt32Interface(
-	in *bytes.Buffer,
-	f func(*bytes.Buffer) (interface{}, error),
-) (interface{}, error) {
-	var size int32
-
-	if err := binary.Read(in, binary.LittleEndian, &size); err != nil {
-		return nil, err
-	}
-
-	res := make(map[int32]interface{}, size)
-
-	var k int32
-
-	for size > 0 {
-		if err := binary.Read(in, binary.LittleEndian, &k); err != nil {
-			return nil, err
-		}
-
-		v, err := f(in)
-
-		if err != nil {
-			return nil, err
-		}
-
-		res[k] = v
-		size--
-	}
-
-	return res, nil
-}
-
-func UnmarshalInt64Interface(
-	in *bytes.Buffer,
-	f func(*bytes.Buffer) (interface{}, error),
-) (interface{}, error) {
-	var size int32
-
-	if err := binary.Read(in, binary.LittleEndian, &size); err != nil {
-		return nil, err
-	}
-
-	res := make(map[int64]interface{}, size)
-
-	var k int64
-
-	for size > 0 {
-		if err := binary.Read(in, binary.LittleEndian, &k); err != nil {
-			return nil, err
-		}
-
-		v, err := f(in)
-
-		if err != nil {
-			return nil, err
-		}
-
-		res[k] = v
-		size--
-	}
-
-	return res, nil
-}
-
-// TODO rename, duplicate code
-func UnmarshalInt64InterfaceLinkedHashMap(
-	in *bytes.Buffer,
-	f func(*bytes.Buffer) (interface{}, error),
-) (interface{}, error) {
-	var size int32
-
-	if err := binary.Read(in, binary.LittleEndian, &size); err != nil {
-		return nil, err
-	}
-
-	res := linkedhashmap.New()
-
-	var k int64
-
-	for size > 0 {
-		if err := binary.Read(in, binary.LittleEndian, &k); err != nil {
-			return nil, err
-		}
-
-		v, err := f(in)
-
-		if err != nil {
-			return nil, err
-		}
-
-		res.Put(k, v)
-		size--
-	}
-
-	return res, nil
-}
-
-func MarshalInt32Int64(in interface{}, out *bytes.Buffer) error {
-	m := in.(map[int32]int64)
-	size := int32(len(m))
-
-	if err := binary.Write(out, binary.LittleEndian, size); err != nil {
-		return err
-	}
-
-	for k, v := range m {
-		if err := binary.Write(out, binary.LittleEndian, k); err != nil {
-			return err
-		}
-
-		if err := binary.Write(out, binary.LittleEndian, v); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// TODO Ref: duplicate code
-func MarshalInt32Interface(
-	in interface{},
-	out *bytes.Buffer,
-	f func(interface{}, *bytes.Buffer) error,
-) error {
-	m := in.(map[int32]interface{})
-	size := int32(len(m))
-
-	if err := binary.Write(out, binary.LittleEndian, size); err != nil {
-		return err
-	}
-
-	for k, v := range m {
-		if err := binary.Write(out, binary.LittleEndian, k); err != nil {
-			return err
-		}
-
-		if err := f(v, out); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func MarshalInt64Interface(
-	in interface{},
-	out *bytes.Buffer,
-	f func(interface{}, *bytes.Buffer) error,
-) error {
-	m := in.(map[int64]interface{})
-	size := int32(len(m))
-
-	if err := binary.Write(out, binary.LittleEndian, size); err != nil {
-		return err
-	}
-
-	for k, v := range m {
-		if err := binary.Write(out, binary.LittleEndian, k); err != nil {
-			return err
-		}
-
-		if err := f(v, out); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func MarshalInt64InterfaceLinkedHashMap(
-	in interface{},
-	out *bytes.Buffer,
-	f func(interface{}, *bytes.Buffer) error,
-) error {
-	m := in.(*linkedhashmap.Map)
-	size := int32(m.Size())
-
-	if err := binary.Write(out, binary.LittleEndian, size); err != nil {
-		return err
-	}
-
-	for _, k := range m.Keys() {
-		v, _ := m.Get(k)
-
-		if err := binary.Write(out, binary.LittleEndian, k.(int64)); err != nil {
-			return err
-		}
-
-		if err := f(v, out); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }

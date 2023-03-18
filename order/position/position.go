@@ -2,7 +2,6 @@ package position
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"log"
 	"math"
@@ -347,90 +346,136 @@ func (mp *marginPosition) Marshal(out *bytes.Buffer) error {
 func MarshalMarginPosition(in interface{}, out *bytes.Buffer) error {
 	s := in.(*marginPosition)
 
-	if err := binary.Write(out, binary.LittleEndian, s.UserId); err != nil {
+	if err := serialization.MarshalInt64(s.UserId, out); err != nil {
 		return err
 	}
 
-	if err := binary.Write(out, binary.LittleEndian, s.SymbolId); err != nil {
+	if err := serialization.MarshalInt32(s.SymbolId, out); err != nil {
 		return err
 	}
 
-	if err := binary.Write(out, binary.LittleEndian, s.Currency); err != nil {
+	if err := serialization.MarshalInt32(s.Currency, out); err != nil {
 		return err
 	}
 
-	if err := binary.Write(out, binary.LittleEndian, s.Direction.Multiplier); err != nil {
+	if err := serialization.MarshalInt8(s.Direction.Multiplier, out); err != nil {
 		return err
 	}
 
-	if err := binary.Write(out, binary.LittleEndian, s.OpenQuantity); err != nil {
+	if err := serialization.MarshalInt64(s.OpenQuantity, out); err != nil {
 		return err
 	}
 
-	if err := binary.Write(out, binary.LittleEndian, s.OpenPriceSum); err != nil {
+	if err := serialization.MarshalInt64(s.OpenPriceSum, out); err != nil {
 		return err
 	}
 
-	if err := binary.Write(out, binary.LittleEndian, s.Profit); err != nil {
+	if err := serialization.MarshalInt64(s.Profit, out); err != nil {
 		return err
 	}
 
-	if err := binary.Write(out, binary.LittleEndian, s.PendingSellQuantity); err != nil {
+	if err := serialization.MarshalInt64(s.PendingSellQuantity, out); err != nil {
 		return err
 	}
 
-	if err := binary.Write(out, binary.LittleEndian, s.PendingBuyQuantity); err != nil {
+	if err := serialization.MarshalInt64(s.PendingBuyQuantity, out); err != nil {
 		return err
 	}
 
-	return s.Marshal(out)
+	return nil
 }
 
 // TODO incompatible with exchange-core
-func UnmarshalMarginPosition(in *bytes.Buffer) (interface{}, error) {
+func UnmarshalMarginPosition(b *bytes.Buffer) (interface{}, error) {
 	m := marginPosition{}
 
-	if err := binary.Read(in, binary.LittleEndian, &(m.UserId)); err != nil {
+	if val, err := serialization.UnmarshalInt64(b); err != nil {
 		return nil, err
+	} else {
+		m.UserId = val.(int64)
 	}
 
-	if err := binary.Read(in, binary.LittleEndian, &(m.SymbolId)); err != nil {
+	if val, err := serialization.UnmarshalInt32(b); err != nil {
 		return nil, err
+	} else {
+		m.SymbolId = val.(int32)
 	}
 
-	if err := binary.Read(in, binary.LittleEndian, &(m.Currency)); err != nil {
+	if val, err := serialization.UnmarshalInt32(b); err != nil {
 		return nil, err
+	} else {
+		m.Currency = val.(int32)
 	}
 
-	if err := binary.Read(in, binary.LittleEndian, &(m.Direction.Multiplier)); err != nil {
+	if val, err := serialization.UnmarshalInt8(b); err != nil {
 		return nil, err
+	} else {
+		m.Direction.Multiplier = val.(int8)
 	}
 
 	if m.Direction != Long && m.Direction != Short && m.Direction != Empty {
 		return nil, fmt.Errorf("invalid position direction: %v", m.Direction.Multiplier)
 	}
 
-	if err := binary.Read(in, binary.LittleEndian, &(m.OpenQuantity)); err != nil {
+	if val, err := serialization.UnmarshalInt64(b); err != nil {
 		return nil, err
+	} else {
+		m.OpenQuantity = val.(int64)
 	}
 
-	if err := binary.Read(in, binary.LittleEndian, &(m.OpenPriceSum)); err != nil {
+	if val, err := serialization.UnmarshalInt64(b); err != nil {
 		return nil, err
+	} else {
+		m.OpenPriceSum = val.(int64)
 	}
 
-	if err := binary.Read(in, binary.LittleEndian, &(m.Profit)); err != nil {
+	if val, err := serialization.UnmarshalInt64(b); err != nil {
 		return nil, err
+	} else {
+		m.Profit = val.(int64)
 	}
 
-	if err := binary.Read(in, binary.LittleEndian, &(m.PendingSellQuantity)); err != nil {
+	if val, err := serialization.UnmarshalInt64(b); err != nil {
 		return nil, err
+	} else {
+		m.PendingSellQuantity = val.(int64)
 	}
 
-	if err := binary.Read(in, binary.LittleEndian, &(m.PendingBuyQuantity)); err != nil {
+	if val, err := serialization.UnmarshalInt64(b); err != nil {
 		return nil, err
+	} else {
+		m.PendingBuyQuantity = val.(int64)
 	}
 
 	return &m, nil
+}
+
+func UnmarshalMarginPositions(b *bytes.Buffer) (interface{}, error) {
+	var val interface{}
+	var err error
+
+	if val, err = serialization.UnmarshalInt32(b); err != nil {
+		return nil, err
+	}
+
+	size := val.(int32)
+	positions := make(map[int32]MarginPosition, size)
+
+	for size > 0 {
+		if k, v, err := serialization.UnmarshalKeyVal(
+			b,
+			serialization.UnmarshalInt32,
+			UnmarshalMarginPosition,
+		); err != nil {
+			return nil, err
+		} else {
+			positions[k.(int32)] = v.(MarginPosition)
+		}
+
+		size--
+	}
+
+	return positions, nil
 }
 
 func NewMarginPosition(
