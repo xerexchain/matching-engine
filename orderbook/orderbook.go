@@ -72,12 +72,16 @@ func (m *matcherResult) EventTail() event.Event {
 
 func (n *naiveOrderBook) prependRejectEvent(
 	orderId int64,
+	price int64,
 	rejectedQuantity int64,
+	action order.Action,
 	res MatcherResult,
 ) {
 	rejectEvent := event.NewRejectEvent(
 		orderId,
+		price,
 		rejectedQuantity,
+		action,
 	)
 
 	rejectEvent.SetNext(res.EventHead())
@@ -233,7 +237,9 @@ func (n *naiveOrderBook) PlaceGTCOrder(
 
 		n.prependRejectEvent(
 			ord.Id(),
+			ord.Price(),
 			ord.Remained(),
+			ord.Action(),
 			res,
 		)
 
@@ -265,7 +271,9 @@ func (n *naiveOrderBook) PlaceIOCOrder(
 
 	n.prependRejectEvent(
 		ord.Id(),
+		ord.Price(),
 		ord.Remained(),
+		ord.Action(),
 		res,
 	)
 
@@ -285,7 +293,9 @@ func (n *naiveOrderBook) PlaceFOKBudgetOrder(
 	} else {
 		rejectEvent := event.NewRejectEvent(
 			ord.Id(),
+			ord.Price(),
 			ord.Remained(),
+			ord.Action(),
 		)
 
 		return &matcherResult{
