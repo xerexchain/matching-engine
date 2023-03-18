@@ -7,8 +7,9 @@ import (
 
 	"github.com/google/btree"
 	"github.com/xerexchain/matching-engine/order"
-	"github.com/xerexchain/matching-engine/orderbook/bucket"
+	"github.com/xerexchain/matching-engine/order/action"
 	"github.com/xerexchain/matching-engine/orderbook/event"
+	"github.com/xerexchain/matching-engine/orderbook/orderbucket"
 	resultcode "github.com/xerexchain/matching-engine/result_code"
 	"github.com/xerexchain/matching-engine/serialization"
 	"github.com/xerexchain/matching-engine/symbol"
@@ -23,8 +24,8 @@ import (
 // TODO IOC_BUDGET and FOK support
 
 const (
-	Naive  byte = 0
-	Direct byte = 2
+	Naive_  byte = 0
+	Direct_ byte = 2
 )
 
 type OrderBook interface {
@@ -33,21 +34,21 @@ type OrderBook interface {
 	Symbol() symbol.Symbol
 	NumAskBuckets() int32
 	NumBidBuckets() int32
-	PlaceGTCOrder(order.Order) *MatcherResult
-	PlaceIOCOrder(order.Order) *MatcherResult
-	PlaceFOKBudgetOrder(order.Order) *MatcherResult
-	MoveOrder(order.Move) *MatcherResult     // TODO adjust balance
-	ReduceOrder(order.Reduce) *MatcherResult // TODO adjust balance // Decrease the size of the order by specific number of lots
-	CancelOrder(order.Cancel) *MatcherResult // TODO adjust balance
-	UserOrders(userId int64) []order.Order
+	PlaceGTC(order.Order) *MatcherResult
+	PlaceIOC(order.Order) *MatcherResult
+	PlaceFOKBudget(order.Order) *MatcherResult
+	Move(int64, int64) *MatcherResult   // TODO adjust balance
+	Reduce(int64, int64) *MatcherResult // TODO adjust balance // Decrease the size of the order by specific number of lots
+	Cancel(int64) *MatcherResult        // TODO adjust balance
+	UserOrders(int64) []order.Order
 	AskOrders() []interface{} // TODO How to return []order.Order
 	BidOrders() []interface{} // TODO How to return []order.Order
-	FillAsks(size int32, data *L2MarketData)
-	FillBids(size int32, data *L2MarketData)
+	FillAsks(int32, *L2MarketData)
+	FillBids(int32, *L2MarketData)
 	ValidateInternalState()
 }
 
-type NaiveOrderBook interface {
+type Naive interface {
 	OrderBook
 }
 
@@ -58,7 +59,7 @@ type MatcherResult struct {
 	_ struct{}
 }
 
-type naiveOrderBook struct {
+type naive struct {
 	askBuckets *btree.BTree
 	bidBuckets *btree.BTree
 	symbol     symbol.Symbol
@@ -66,37 +67,37 @@ type naiveOrderBook struct {
 	_          struct{}
 }
 
-func (n *naiveOrderBook) sameBuckets(
-	act order.Action,
+func (n *naive) sameBucketsAs(
+	act action.Action,
 ) *btree.BTree {
-	if act == order.Ask {
+	if act == action.Ask {
 		return n.askBuckets
 	} else {
 		return n.bidBuckets
 	}
 }
 
-func (n *naiveOrderBook) oppositeBuckets(
-	act order.Action,
+func (n *naive) oppositeBucketsTo(
+	act action.Action,
 ) *btree.BTree {
-	if act == order.Ask {
+	if act == action.Ask {
 		return n.bidBuckets
 	} else {
 		return n.askBuckets
 	}
 }
 
-func (n *naiveOrderBook) findBucket(
+func (n *naive) findBucket(
 	price int64,
 	buckets *btree.BTree,
-) (bucket.NaiveOrderBucket, bool) {
-	var res bucket.NaiveOrderBucket
-	pivot := bucket.NewDumpNaiveOrderBucket(price)
+) (orderbucket.Naive, bool) {
+	var res orderbucket.Naive
+	pivot := orderbucket.NewDumpNaive(price)
 
 	buckets.AscendGreaterOrEqual(
 		pivot,
 		func(item btree.Item) bool {
-			buck := item.(bucket.NaiveOrderBucket)
+			buck := item.(orderbucket.Naive)
 
 			if price == buck.Price() {
 				res = buck
@@ -111,9 +112,9 @@ func (n *naiveOrderBook) findBucket(
 	return res, ok
 }
 
-func (n *naiveOrderBook) budgetToFill(
+func (n *naive) budgetToFill(
 	toCollect int64,
-	act order.Action,
+	act action.Action,
 ) (int64, int64) {
 	collected := int64(0)
 	budget := int64(0)
@@ -123,7 +124,7 @@ func (n *naiveOrderBook) budgetToFill(
 			return false
 		}
 
-		buck := item.(bucket.NaiveOrderBucket)
+		buck := item.(orderbucket.Naive)
 		totalQuantity := buck.TotalQuantity()
 		price := buck.Price()
 
@@ -138,7 +139,7 @@ func (n *naiveOrderBook) budgetToFill(
 		return true
 	}
 
-	if act == order.Ask {
+	if act == action.Ask {
 		n.bidBuckets.Descend(f)
 	} else {
 		n.askBuckets.Ascend(f)
@@ -147,19 +148,19 @@ func (n *naiveOrderBook) budgetToFill(
 	return budget, collected
 }
 
-func (n *naiveOrderBook) tryMatchInstantly(
+func (n *naive) tryMatchInstantly(
 	ord order.Order,
 ) *MatcherResult {
-	pivot := bucket.NewDumpNaiveOrderBucket(ord.Price())
-	emptyBucks := []bucket.NaiveOrderBucket{}
-	var head, tail event.TradeEvent
+	pivot := orderbucket.NewDumpNaive(ord.Price())
+	emptyBucks := []orderbucket.Naive{}
+	var head, tail event.Trade
 
 	f := func(item btree.Item) bool {
 		if ord.Remained() == 0 {
 			return false
 		}
 
-		buck := item.(bucket.NaiveOrderBucket)
+		buck := item.(orderbucket.Naive)
 		res := buck.Match(
 			ord.Remained(),
 			ord.ReservedBidPrice(),
@@ -186,13 +187,13 @@ func (n *naiveOrderBook) tryMatchInstantly(
 		return true
 	}
 
-	if ord.Action() == order.Ask {
+	if ord.Action() == action.Ask {
 		n.bidBuckets.AscendGreaterOrEqual(pivot, f)
 	} else {
 		n.askBuckets.DescendLessOrEqual(pivot, f)
 	}
 
-	targetBucks := n.oppositeBuckets(ord.Action())
+	targetBucks := n.oppositeBucketsTo(ord.Action())
 
 	// TODO Is it necessary?
 	for _, buck := range emptyBucks {
@@ -206,19 +207,19 @@ func (n *naiveOrderBook) tryMatchInstantly(
 	}
 }
 
-func (n *naiveOrderBook) Symbol() symbol.Symbol {
+func (n *naive) Symbol() symbol.Symbol {
 	return n.symbol
 }
 
-func (n *naiveOrderBook) NumAskBuckets() int32 {
+func (n *naive) NumAskBuckets() int32 {
 	return int32(n.askBuckets.Len())
 }
 
-func (n *naiveOrderBook) NumBidBuckets() int32 {
+func (n *naive) NumBidBuckets() int32 {
 	return int32(n.bidBuckets.Len())
 }
 
-func (n *naiveOrderBook) PlaceGTCOrder(
+func (n *naive) PlaceGTC(
 	ord order.Order,
 ) *MatcherResult {
 	res := n.tryMatchInstantly(ord)
@@ -230,7 +231,7 @@ func (n *naiveOrderBook) PlaceGTCOrder(
 	if _, ok := n.orders[ord.Id()]; ok {
 		log.Printf("warn: duplicate order id: %v\n", ord.Id())
 
-		newHead := event.PrependRejectEvent(
+		newHead := event.PrependReject(
 			res.EventHead,
 			ord.Id(),
 			ord.Price(),
@@ -242,12 +243,12 @@ func (n *naiveOrderBook) PlaceGTCOrder(
 		return res
 	}
 
-	targetBucks := n.sameBuckets(ord.Action())
+	targetBucks := n.sameBucketsAs(ord.Action())
 
 	buck, ok := n.findBucket(ord.Price(), targetBucks)
 
 	if !ok {
-		buck = bucket.NewNaiveOrderBucket(ord.Price())
+		buck = orderbucket.NewNaive(ord.Price())
 		targetBucks.ReplaceOrInsert(buck)
 	}
 
@@ -257,7 +258,7 @@ func (n *naiveOrderBook) PlaceGTCOrder(
 	return res
 }
 
-func (n *naiveOrderBook) PlaceIOCOrder(
+func (n *naive) PlaceIOC(
 	ord order.Order,
 ) *MatcherResult {
 	res := n.tryMatchInstantly(ord)
@@ -266,7 +267,7 @@ func (n *naiveOrderBook) PlaceIOCOrder(
 		return res
 	}
 
-	newHead := event.PrependRejectEvent(
+	newHead := event.PrependReject(
 		res.EventHead,
 		ord.Id(),
 		ord.Price(),
@@ -278,18 +279,18 @@ func (n *naiveOrderBook) PlaceIOCOrder(
 	return res
 }
 
-func (n *naiveOrderBook) PlaceFOKBudgetOrder(
+func (n *naive) PlaceFOKBudget(
 	ord order.Order,
 ) *MatcherResult {
 	budget, collected := n.budgetToFill(ord.Remained(), ord.Action())
 
 	// TODO logic
 	if collected == ord.Remained() || ((ord.Price() == budget) ||
-		((ord.Action() == order.Ask) && (budget <= ord.Price())) ||
-		((ord.Action() == order.Bid) && (budget > ord.Price()))) {
+		((ord.Action() == action.Ask) && (budget <= ord.Price())) ||
+		((ord.Action() == action.Bid) && (budget > ord.Price()))) {
 		return n.tryMatchInstantly(ord)
 	} else {
-		rejectEvent := event.NewRejectEvent(
+		e := event.NewReject(
 			ord.Id(),
 			ord.Price(),
 			ord.Remained(),
@@ -297,19 +298,17 @@ func (n *naiveOrderBook) PlaceFOKBudgetOrder(
 		)
 
 		return &MatcherResult{
-			EventHead:  rejectEvent,
-			EventTail:  rejectEvent,
+			EventHead:  e,
+			EventTail:  e,
 			ResultCode: resultcode.Success,
 		}
 	}
 }
 
 // TODO order.uid != cmd.uid
-func (n *naiveOrderBook) MoveOrder(
-	m order.Move,
+func (n *naive) Move(
+	orderId, toPrice int64,
 ) *MatcherResult {
-	orderId := m.OrderId()
-	toPrice := m.ToPrice()
 	ord, ok := n.orders[orderId]
 
 	if !ok {
@@ -326,7 +325,7 @@ func (n *naiveOrderBook) MoveOrder(
 
 	// reserved price risk check for exchange bids
 	// TODO symbolSpec.type == SymbolType.CURRENCY_EXCHANGE_PAIR
-	if ord.Action() == order.Bid && toPrice > ord.ReservedBidPrice() {
+	if ord.Action() == action.Bid && toPrice > ord.ReservedBidPrice() {
 		return &MatcherResult{
 			ResultCode: resultcode.MatchingMoveFailedPriceOverRiskLimit,
 		}
@@ -343,13 +342,8 @@ func (n *naiveOrderBook) MoveOrder(
 		ord.Action(),
 	)
 
-	reduceOrder := order.NewReduceOrder(
-		ord.Id(),
-		ord.Remained(),
-	)
-
-	reduceRes := n.ReduceOrder(reduceOrder)
-	gtcRes := n.PlaceGTCOrder(newOrder)
+	reduceRes := n.Reduce(ord.Id(), ord.Remained())
+	gtcRes := n.PlaceGTC(newOrder)
 
 	reduceRes.EventTail.SetNext(gtcRes.EventHead)
 
@@ -361,15 +355,12 @@ func (n *naiveOrderBook) MoveOrder(
 }
 
 // TODO order.uid != cmd.uid
-func (n *naiveOrderBook) ReduceOrder(
-	r order.Reduce,
+func (n *naive) Reduce(
+	orderId, quantity int64,
 ) *MatcherResult {
-	orderId := r.OrderId()
-	reduceQuantity := r.ReduceQuantity()
-
-	if reduceQuantity <= 0 {
+	if quantity <= 0 {
 		return &MatcherResult{
-			ResultCode: resultcode.MatchingReduceFailedWrongSize,
+			ResultCode: resultcode.MatchingReduceFailedWrongQuantity,
 		}
 	}
 
@@ -381,11 +372,11 @@ func (n *naiveOrderBook) ReduceOrder(
 		}
 	}
 
-	if reduceQuantity > ord.Remained() {
-		reduceQuantity = ord.Remained()
+	if quantity > ord.Remained() {
+		quantity = ord.Remained()
 	}
 
-	targetBucks := n.sameBuckets(ord.Action())
+	targetBucks := n.sameBucketsAs(ord.Action())
 
 	buck, ok := n.findBucket(ord.Price(), targetBucks)
 
@@ -399,8 +390,8 @@ func (n *naiveOrderBook) ReduceOrder(
 		)
 	}
 
-	buck.Reduce(reduceQuantity)
-	ord.Reduce(reduceQuantity)
+	buck.Reduce(quantity)
+	ord.Reduce(quantity)
 
 	if ord.Remained() == 0 {
 		delete(n.orders, orderId)
@@ -411,26 +402,25 @@ func (n *naiveOrderBook) ReduceOrder(
 		}
 	}
 
-	reduceEvent := event.NewReduceEvent(
+	e := event.NewReduce(
 		orderId,
 		ord.Remained() == 0,
 		ord.Price(),
-		reduceQuantity,
+		quantity,
 		ord.Action(),
 	)
 
 	return &MatcherResult{
-		EventHead:  reduceEvent,
-		EventTail:  reduceEvent,
+		EventHead:  e,
+		EventTail:  e,
 		ResultCode: resultcode.Success,
 	}
 }
 
 // TODO order.uid == cmd.uid
-func (n *naiveOrderBook) CancelOrder(
-	c order.Cancel,
+func (n *naive) Cancel(
+	orderId int64,
 ) *MatcherResult {
-	orderId := c.OrderId()
 	ord, ok := n.orders[orderId]
 
 	if !ok {
@@ -439,22 +429,17 @@ func (n *naiveOrderBook) CancelOrder(
 		}
 	}
 
-	reduceOrder := order.NewReduceOrder(
-		ord.Id(),
-		ord.Remained(),
-	)
-
-	return n.ReduceOrder(reduceOrder)
+	return n.Reduce(ord.Id(), ord.Remained())
 }
 
 // TODO performance
-func (n *naiveOrderBook) UserOrders(
+func (n *naive) UserOrders(
 	userId int64,
 ) []order.Order {
 	res := []order.Order{}
 
 	f := func(item btree.Item) bool {
-		buck := item.(bucket.NaiveOrderBucket)
+		buck := item.(orderbucket.Naive)
 
 		buck.ForEachOrder(func(ord order.Order) {
 			if userId == ord.UserId() {
@@ -473,11 +458,11 @@ func (n *naiveOrderBook) UserOrders(
 
 // TODO performance
 // TODO return []order.Order
-func (n *naiveOrderBook) AskOrders() []interface{} {
+func (n *naive) AskOrders() []interface{} {
 	res := []interface{}{}
 
 	n.askBuckets.Ascend(func(item btree.Item) bool {
-		buck := item.(bucket.NaiveOrderBucket)
+		buck := item.(orderbucket.Naive)
 		allOrders := buck.AllOrders()
 		res = append(res, allOrders...)
 
@@ -489,12 +474,12 @@ func (n *naiveOrderBook) AskOrders() []interface{} {
 
 // TODO performance
 // TODO return []order.Order
-func (n *naiveOrderBook) BidOrders() []interface{} {
+func (n *naive) BidOrders() []interface{} {
 	res := []interface{}{}
 
 	// TODO duplicate code
 	n.bidBuckets.Descend(func(item btree.Item) bool {
-		buck := item.(bucket.NaiveOrderBucket)
+		buck := item.(orderbucket.Naive)
 		allOrders := buck.AllOrders()
 		res = append(res, allOrders...)
 
@@ -504,7 +489,7 @@ func (n *naiveOrderBook) BidOrders() []interface{} {
 	return res
 }
 
-func (n *naiveOrderBook) FillAsks(size int32, data L2MarketData) {
+func (n *naive) FillAsks(size int32, data L2MarketData) {
 	if size > data.AskSize() {
 		size = data.AskSize()
 	}
@@ -516,7 +501,7 @@ func (n *naiveOrderBook) FillAsks(size int32, data L2MarketData) {
 			return false
 		}
 
-		buck := item.(bucket.NaiveOrderBucket)
+		buck := item.(orderbucket.Naive)
 		data.SetAskPriceAt(i, buck.Price())
 		data.SetAskQuantityAt(i, buck.TotalQuantity())
 		data.SetNumAskOrdersAt(i, buck.NumOrders())
@@ -528,7 +513,7 @@ func (n *naiveOrderBook) FillAsks(size int32, data L2MarketData) {
 	data.LimitAskViewTo(size)
 }
 
-func (n *naiveOrderBook) FillBids(size int32, data L2MarketData) {
+func (n *naive) FillBids(size int32, data L2MarketData) {
 	if size > data.BidSize() {
 		size = data.BidSize()
 	}
@@ -540,7 +525,7 @@ func (n *naiveOrderBook) FillBids(size int32, data L2MarketData) {
 			return false
 		}
 
-		buck := item.(bucket.NaiveOrderBucket)
+		buck := item.(orderbucket.Naive)
 		data.SetBidPriceAt(i, buck.Price())
 		data.SetBidQuantityAt(i, buck.TotalQuantity())
 		data.SetNumBidOrdersAt(i, buck.NumOrders())
@@ -552,9 +537,9 @@ func (n *naiveOrderBook) FillBids(size int32, data L2MarketData) {
 	data.LimitBidViewTo(size)
 }
 
-func (n *naiveOrderBook) ValidateInternalState() {
+func (n *naive) ValidateInternalState() {
 	f := func(item btree.Item) bool {
-		buck := item.(bucket.NaiveOrderBucket)
+		buck := item.(orderbucket.Naive)
 		buck.Validate()
 
 		return true
@@ -564,19 +549,19 @@ func (n *naiveOrderBook) ValidateInternalState() {
 	n.askBuckets.Descend(f)
 }
 
-func (n *naiveOrderBook) Hash() uint64 {
+func (n *naive) Hash() uint64 {
 	// TODO impl
 	return 0
 }
 
-func (n *naiveOrderBook) Marshal(out *bytes.Buffer) error {
-	return MarshalNaiveOrderBook(n, out)
+func (n *naive) Marshal(out *bytes.Buffer) error {
+	return MarshalNaive(n, out)
 }
 
-func MarshalNaiveOrderBook(in interface{}, out *bytes.Buffer) error {
-	n := in.(*naiveOrderBook)
+func MarshalNaive(in interface{}, out *bytes.Buffer) error {
+	n := in.(*naive)
 
-	if err := serialization.MarshalInt8(Naive, out); err != nil {
+	if err := serialization.MarshalInt8(Naive_, out); err != nil {
 		return err
 	}
 
@@ -587,7 +572,7 @@ func MarshalNaiveOrderBook(in interface{}, out *bytes.Buffer) error {
 	if err := serialization.MarshalBtree(
 		n.askBuckets,
 		out,
-		bucket.MarshalNaiveOrderBucket,
+		orderbucket.MarshalNaive,
 	); err != nil {
 		return err
 	}
@@ -595,7 +580,7 @@ func MarshalNaiveOrderBook(in interface{}, out *bytes.Buffer) error {
 	if err := serialization.MarshalBtree(
 		n.bidBuckets,
 		out,
-		bucket.MarshalNaiveOrderBucket,
+		orderbucket.MarshalNaive,
 	); err != nil {
 		return err
 	}
@@ -603,8 +588,8 @@ func MarshalNaiveOrderBook(in interface{}, out *bytes.Buffer) error {
 	return nil
 }
 
-func UnmarshalNaiveOrderBook(b *bytes.Buffer) (interface{}, error) {
-	n := naiveOrderBook{}
+func UnmarshalNaive(b *bytes.Buffer) (interface{}, error) {
+	n := naive{}
 
 	if s, err := symbol.UnmarshalSymbol(b); err != nil {
 		return nil, err
@@ -614,7 +599,7 @@ func UnmarshalNaiveOrderBook(b *bytes.Buffer) (interface{}, error) {
 
 	if askBuckets, err := serialization.UnmarshalBtree(
 		b,
-		bucket.UnmarshalNaiveOrderBucket,
+		orderbucket.UnmarshalNaive,
 	); err != nil {
 		return nil, err
 	} else {
@@ -623,7 +608,7 @@ func UnmarshalNaiveOrderBook(b *bytes.Buffer) (interface{}, error) {
 
 	if bidBuckets, err := serialization.UnmarshalBtree(
 		b,
-		bucket.UnmarshalNaiveOrderBucket,
+		orderbucket.UnmarshalNaive,
 	); err != nil {
 		return nil, err
 	} else {
@@ -633,7 +618,7 @@ func UnmarshalNaiveOrderBook(b *bytes.Buffer) (interface{}, error) {
 	var numOrders int64 = 0
 
 	counter := func(item btree.Item) bool {
-		buck := item.(bucket.NaiveOrderBucket)
+		buck := item.(orderbucket.Naive)
 		numOrders += int64(buck.NumOrders())
 
 		return true
@@ -645,7 +630,7 @@ func UnmarshalNaiveOrderBook(b *bytes.Buffer) (interface{}, error) {
 	n.orders = make(map[int64]order.Order, numOrders)
 
 	appender := func(item btree.Item) bool {
-		buck := item.(bucket.NaiveOrderBucket)
+		buck := item.(orderbucket.Naive)
 
 		buck.ForEachOrder(func(ord order.Order) {
 			n.orders[ord.Id()] = ord

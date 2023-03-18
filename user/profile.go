@@ -13,21 +13,21 @@ import (
 type Profile interface {
 	state.Hashable
 	serialization.Marshalable
-	MarginPositionOf(symbolId int32) (position.MarginPosition, error)
+	MarginPositionOf(symbolId int32) (position.Margin, error)
 }
 
 type profile struct {
 	UserId             int64
 	AdjustmentsCounter int64 // protects from double adjustment
 	Status
-	Balance         map[int32]int64                   // currency -> balance
-	MarginPositions map[int32]position.MarginPosition // symbolId -> margin position
+	Balance         map[int32]int64           // currency -> balance
+	MarginPositions map[int32]position.Margin // symbolId -> margin position
 	_               struct{}
 }
 
 func (p *profile) MarginPositionOf(
 	symbolId int32,
-) (position.MarginPosition, error) {
+) (position.Margin, error) {
 	if pos, ok := p.MarginPositions[symbolId]; !ok {
 		return nil, fmt.Errorf("not found position for symbol %v", symbolId)
 	} else {
@@ -55,7 +55,7 @@ func NewProfile(userId int64, status Status) Profile {
 		UserId:          userId,
 		Status:          status,
 		Balance:         make(map[int32]int64),
-		MarginPositions: make(map[int32]position.MarginPosition),
+		MarginPositions: make(map[int32]position.Margin),
 	}
 }
 
@@ -71,7 +71,7 @@ func MarshalProfile(in interface{}, out *bytes.Buffer) error {
 		p.MarginPositions,
 		out,
 		serialization.MarshalInt32,
-		position.MarshalMarginPosition,
+		position.MarshalMargin,
 	); err != nil {
 		return err
 	}
@@ -110,10 +110,10 @@ func UnmarshalProfile(b *bytes.Buffer) (interface{}, error) {
 		p.UserId = val.(int64)
 	}
 
-	if positions, err := position.UnmarshalMarginPositions(b); err != nil {
+	if positions, err := position.UnmarshalMargins(b); err != nil {
 		return nil, err
 	} else {
-		p.MarginPositions = positions.(map[int32]position.MarginPosition)
+		p.MarginPositions = positions.(map[int32]position.Margin)
 	}
 
 	if val, err := serialization.UnmarshalInt64(b); err != nil {

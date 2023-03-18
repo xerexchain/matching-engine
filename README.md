@@ -3,11 +3,11 @@ Implementation of an order matching engine
 
 
 ## Note
-The project is still in development. The project is unstable and lacks proper testing. PLEASE DON'T USE IN PRODUCTION until tests are complete and first version is release.
+The project is still in development. The project is unstable and lacks proper testing. PLEASE DON'T USE IN PRODUCTION until tests are complete and first version is released.
 
 
 ## Desc
-The project is inspired from [exchange-core](https://github.com/exchange-core/exchange-core). The goal is to port that project in golang then add new features like write-only-read-only instances. Integration with blockchain wallets is on the plan too.
+The project is inspired from [exchange-core](https://github.com/exchange-core/exchange-core). The goal is to port that project in Golang then add new features like write-only-read-only instances. Integration with blockchain wallets is on the plan too.
 
 
 ##  TODO
