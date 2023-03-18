@@ -17,7 +17,7 @@ const (
 	UnsupportedSymbolType ResultCode = -1203
 
 	RiskNFS                    ResultCode = -2001
-	RiskInvalidReserveBidPrice ResultCode = -2002
+	RiskInvalidReservedBidPrice ResultCode = -2002
 	RiskAskPriceLowerThanFee   ResultCode = -2003
 	RiskMarginTradingDisabled  ResultCode = -2004
 
@@ -30,6 +30,7 @@ const (
 
 	MatchingMoveRejectedDifferentPrice   ResultCode = -3040
 	MatchingMoveFailedPriceOverRiskLimit ResultCode = -3041
+	MatchingMoveFailedPriceInvalid ResultCode = -3042 // TODO
 
 	MatchingReduceFailedWrongSize ResultCode = -3051
 

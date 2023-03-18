@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/xerexchain/matching-engine/cmd/result_code"
+	"github.com/xerexchain/matching-engine/result_code"
 	"github.com/xerexchain/matching-engine/order"
 	"github.com/xerexchain/matching-engine/orderbook"
 	"github.com/xerexchain/matching-engine/orderbook/event"
@@ -25,7 +25,7 @@ type orderCommand struct {
 	size   int64
 
 	// new orders INPUT - reserved price for fast moves of GTC bid orders in exchange mode
-	reserveBidPrice int64
+	reservedBidPrice int64
 
 	timestamp  int64
 	userCookie int32
