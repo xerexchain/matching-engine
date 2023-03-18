@@ -18,13 +18,13 @@ type Event interface {
 
 // TODO equals and hashCode overriden
 // Can be triggered by place ORDER or for MOVE order command.
-type TradeEvent interface {
+type Trade interface {
 	Event
 }
 
 // TODO equals and hashCode overriden
 // After reduce order - risk engine should unlock deposit accordingly
-type ReduceEvent interface {
+type Reduce interface {
 	Event
 }
 
@@ -32,53 +32,53 @@ type ReduceEvent interface {
 // Can happen only when MARKET order has to be rejected by Matcher Engine due lack of liquidity
 // That basically means no ASK (or BID) orders left in the order book for any price.
 // Before being rejected active order can be partially filled.
-type RejectEvent interface {
+type Reject interface {
 	Event
 }
 
 // TODO equals and hashCode overriden
 // Custom binary data attached
-type BinaryEvent interface {
+type Binary interface {
 	Event
 }
 
 // TODO redundant fields?
-type tradeEvent struct {
+type trade struct {
 	makerOrderId        int64
 	makerUserId         int64
 	makerOrderCompleted bool
 	takerOrderCompleted bool
 	price               int64 // actual price of the deal (from maker order)
-	tradedQuantity      int64 // traded quantity, transfered from maker to taker
+	quantity            int64 // traded quantity, transfered from maker to taker
 	bidderHoldPrice     int64 // frozen price from BID order owner (depends on activeOrderAction) // TODO doc
 	next                Event
 	_                   struct{}
 }
 
 // TODO redundant fields?
-type reduceEvent struct {
+type reduce struct {
 	makerOrderId        int64
 	makerOrderCompleted bool
 	price               int64
-	reduceQuantity      int64
+	quantity            int64 // reduced quantity
 	action              action.Action
 	next                Event
 	_                   struct{}
 }
 
 // TODO redundant fields?
-type rejectEvent struct {
-	takerOrderId     int64
-	price            int64
-	rejectedQuantity int64
-	action           action.Action
-	next             Event
-	_                struct{}
+type reject struct {
+	takerOrderId int64
+	price        int64
+	quantity     int64 // rejected quantity
+	action       action.Action
+	next         Event
+	_            struct{}
 }
 
 // TODO complete impl
 // TODO redundant fields?
-type binaryEvent struct {
+type binary struct {
 	_ struct{}
 }
 
@@ -101,61 +101,61 @@ func chainSize(e Event) int32 {
 	return size
 }
 
-func (t *tradeEvent) Next() Event {
+func (t *trade) Next() Event {
 	return t.next
 }
 
-func (t *tradeEvent) SetNext(next Event) {
+func (t *trade) SetNext(next Event) {
 	t.next = next
 }
 
-func (t *tradeEvent) FindTail() Event {
+func (t *trade) FindTail() Event {
 	return findTail(t)
 }
 
-func (t *tradeEvent) ChainSize() int32 {
+func (t *trade) ChainSize() int32 {
 	return chainSize(t)
 }
 
-func (r *rejectEvent) Next() Event {
+func (r *reject) Next() Event {
 	return r.next
 }
 
-func (r *rejectEvent) SetNext(next Event) {
+func (r *reject) SetNext(next Event) {
 	r.next = next
 }
 
-func (r *rejectEvent) FindTail() Event {
+func (r *reject) FindTail() Event {
 	return findTail(r)
 }
 
-func (r *rejectEvent) ChainSize() int32 {
+func (r *reject) ChainSize() int32 {
 	return chainSize(r)
 }
 
-func (r *reduceEvent) Next() Event {
+func (r *reduce) Next() Event {
 	return r.next
 }
 
-func (r *reduceEvent) SetNext(next Event) {
+func (r *reduce) SetNext(next Event) {
 	r.next = next
 }
 
-func (r *reduceEvent) FindTail() Event {
+func (r *reduce) FindTail() Event {
 	return findTail(r)
 }
 
-func (r *reduceEvent) ChainSize() int32 {
+func (r *reduce) ChainSize() int32 {
 	return chainSize(r)
 }
 
 // TODO unused?
-func CreateTradeEventChain(chainSize int32) TradeEvent {
-	head := &tradeEvent{}
+func CreateTradeChain(chainSize int32) Trade {
+	head := &trade{}
 	prev := head
 
 	for chainSize > 1 {
-		next := &tradeEvent{}
+		next := &trade{}
 		prev.SetNext(next)
 		prev = next
 		chainSize--
@@ -164,71 +164,71 @@ func CreateTradeEventChain(chainSize int32) TradeEvent {
 	return head
 }
 
-func PrependRejectEvent(
+func PrependReject(
 	to Event,
 	orderId int64,
 	price int64,
-	rejectedQuantity int64,
+	quantity int64, // rejected quantity
 	act action.Action,
-) RejectEvent {
-	rejectEvent := NewRejectEvent(
+) Reject {
+	r := NewReject(
 		orderId,
 		price,
-		rejectedQuantity,
+		quantity,
 		act,
 	)
 
-	rejectEvent.SetNext(to)
+	r.SetNext(to)
 
-	return rejectEvent
+	return r
 }
 
-func NewTradeEvent(
+func NewTrade(
 	makerOrderId int64,
 	makerUserId int64,
 	makerOrderCompleted bool,
 	takerOrderCompleted bool,
 	price int64,
-	tradedQuantity int64,
+	quantity int64, // traded quantity
 	bidderHoldPrice int64,
-) TradeEvent {
-	return &tradeEvent{
+) Trade {
+	return &trade{
 		makerOrderId:        makerOrderId,
 		makerUserId:         makerUserId,
 		makerOrderCompleted: makerOrderCompleted,
 		takerOrderCompleted: takerOrderCompleted,
 		price:               price,
-		tradedQuantity:      tradedQuantity,
+		quantity:            quantity,
 		bidderHoldPrice:     bidderHoldPrice,
 	}
 }
 
-func NewReduceEvent(
+func NewReduce(
 	makerOrderId int64,
 	makerOrderCompleted bool,
 	price int64,
-	reduceQuantity int64,
+	quantity int64, // reduced quantity
 	act action.Action,
-) ReduceEvent {
-	return &reduceEvent{
+) Reduce {
+	return &reduce{
 		makerOrderId:        makerOrderId,
 		makerOrderCompleted: makerOrderCompleted,
 		price:               price,
-		reduceQuantity:      reduceQuantity,
+		quantity:            quantity,
 		action:              act,
 	}
 }
 
-func NewRejectEvent(
+func NewReject(
 	takerOrderId int64,
 	price int64,
-	rejectedQuantity int64,
+	quantity int64, // rejected quantity
 	act action.Action,
-) RejectEvent {
-	return &rejectEvent{
-		takerOrderId:     takerOrderId,
-		price:            price,
-		rejectedQuantity: rejectedQuantity,
-		action:           act,
+) Reject {
+	return &reject{
+		takerOrderId: takerOrderId,
+		price:        price,
+		quantity:     quantity,
+		action:       act,
 	}
 }

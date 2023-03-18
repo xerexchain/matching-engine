@@ -5,7 +5,7 @@ import (
 	"github.com/xerexchain/matching-engine/order/action"
 	"github.com/xerexchain/matching-engine/orderbook"
 	"github.com/xerexchain/matching-engine/orderbook/event"
-	"github.com/xerexchain/matching-engine/result_code"
+	resultcode "github.com/xerexchain/matching-engine/result_code"
 )
 
 type OrderCommand interface {
@@ -38,14 +38,14 @@ type orderCommand struct {
 	// can also be used for saving intermediate state
 	resultCode resultcode.ResultCode
 
-	tradeEvent event.TradeEvent
+	tradeEvent event.Trade
 
 	marketData orderbook.L2MarketData
 	_          struct{}
 }
 
 // No removing/revoking
-func (o *orderCommand) ProcessMatcherEvents(ch chan<- event.TradeEvent) {
+func (o *orderCommand) ProcessMatcherEvents(ch chan<- event.Trade) {
 	eve := o.tradeEvent
 
 	for eve != nil {

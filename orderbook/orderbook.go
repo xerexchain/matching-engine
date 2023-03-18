@@ -153,7 +153,7 @@ func (n *naiveOrderBook) tryMatchInstantly(
 ) *MatcherResult {
 	pivot := orderbucket.NewDumpNaive(ord.Price())
 	emptyBucks := []orderbucket.Naive{}
-	var head, tail event.TradeEvent
+	var head, tail event.Trade
 
 	f := func(item btree.Item) bool {
 		if ord.Remained() == 0 {
@@ -231,7 +231,7 @@ func (n *naiveOrderBook) PlaceGTCOrder(
 	if _, ok := n.orders[ord.Id()]; ok {
 		log.Printf("warn: duplicate order id: %v\n", ord.Id())
 
-		newHead := event.PrependRejectEvent(
+		newHead := event.PrependReject(
 			res.EventHead,
 			ord.Id(),
 			ord.Price(),
@@ -267,7 +267,7 @@ func (n *naiveOrderBook) PlaceIOCOrder(
 		return res
 	}
 
-	newHead := event.PrependRejectEvent(
+	newHead := event.PrependReject(
 		res.EventHead,
 		ord.Id(),
 		ord.Price(),
@@ -290,7 +290,7 @@ func (n *naiveOrderBook) PlaceFOKBudgetOrder(
 		((ord.Action() == action.Bid) && (budget > ord.Price()))) {
 		return n.tryMatchInstantly(ord)
 	} else {
-		rejectEvent := event.NewRejectEvent(
+		e := event.NewReject(
 			ord.Id(),
 			ord.Price(),
 			ord.Remained(),
@@ -298,8 +298,8 @@ func (n *naiveOrderBook) PlaceFOKBudgetOrder(
 		)
 
 		return &MatcherResult{
-			EventHead:  rejectEvent,
-			EventTail:  rejectEvent,
+			EventHead:  e,
+			EventTail:  e,
 			ResultCode: resultcode.Success,
 		}
 	}
@@ -402,7 +402,7 @@ func (n *naiveOrderBook) ReduceOrder(
 		}
 	}
 
-	reduceEvent := event.NewReduceEvent(
+	e := event.NewReduce(
 		orderId,
 		ord.Remained() == 0,
 		ord.Price(),
@@ -411,8 +411,8 @@ func (n *naiveOrderBook) ReduceOrder(
 	)
 
 	return &MatcherResult{
-		EventHead:  reduceEvent,
-		EventTail:  reduceEvent,
+		EventHead:  e,
+		EventTail:  e,
 		ResultCode: resultcode.Success,
 	}
 }

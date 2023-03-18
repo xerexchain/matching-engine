@@ -39,8 +39,8 @@ type naive struct {
 }
 
 type MatcherResult struct {
-	EventHead         event.TradeEvent
-	EventTail         event.TradeEvent
+	EventHead         event.Trade
+	EventTail         event.Trade
 	CollectedQuantity int64
 	RemovedOrders     []int64
 	_                 struct{}
@@ -128,7 +128,7 @@ func (n *naive) Match(
 ) *MatcherResult {
 	collected := int64(0)
 	removedOrders := []int64{}
-	var head, tail event.TradeEvent
+	var head, tail event.Trade
 	var bidderHoldPrice int64
 
 	for _, v := range n.AllOrders() {
@@ -155,7 +155,7 @@ func (n *naive) Match(
 			bidderHoldPrice = ord.ReservedBidPrice()
 		}
 
-		tradeEvent := event.NewTradeEvent(
+		e := event.NewTrade(
 			ord.Id(),
 			ord.UserId(),
 			ord.Remained() == 0,
@@ -166,12 +166,12 @@ func (n *naive) Match(
 		)
 
 		if tail == nil {
-			head = tradeEvent
+			head = e
 		} else {
-			tail.SetNext(tradeEvent)
+			tail.SetNext(e)
 		}
 
-		tail = tradeEvent
+		tail = e
 	}
 
 	return &MatcherResult{
