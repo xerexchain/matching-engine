@@ -1,4 +1,4 @@
-package bucket
+package orderbucket
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/emirpasic/gods/maps/linkedhashmap"
 	"github.com/google/btree"
+	"github.com/xerexchain/matching-engine/math"
 	"github.com/xerexchain/matching-engine/order"
 	"github.com/xerexchain/matching-engine/order/action"
 	"github.com/xerexchain/matching-engine/orderbook/event"
@@ -14,28 +15,25 @@ import (
 
 // TODO functions thread safty, calls are subject to race condition
 // TODO Comparable<OrdersBucketNaive>, compareTo, hashCode, equals
-type NaiveOrderBucket interface {
+type Naive interface {
 	btree.Item
 	serialization.Marshalable
 	Price() int64
 	Put(order.Order)
-	Remove(orderId int64)
-	Reduce(educeQuantity int64)
+	Remove(int64)
+	Reduce(int64)
 	NumOrders() int32
 	AllOrders() []interface{}
-	FindOrder(orderId int64) (order.Order, bool)
+	Find(int64) (order.Order, bool)
 	ForEachOrder(func(order.Order))
 	TotalQuantity() int64
 	Validate()
-	Match(
-		toCollect int64,
-		reservedBidPrice int64,
-	) *MatcherResult
+	Match(int64, int64) *MatcherResult
 }
 
-type naiveOrderBucket struct {
+type naive struct {
 	price         int64
-	totalQuantity int64 // FIX this field imposes side effects on functions.
+	totalQuantity int64 // FIX This field imposes side effects on functions.
 	orders        *linkedhashmap.Map
 	_             struct{}
 }
@@ -48,42 +46,42 @@ type MatcherResult struct {
 	_                 struct{}
 }
 
-func (n *naiveOrderBucket) Price() int64 {
+func (n *naive) Price() int64 {
 	return n.price
 }
 
-func (n *naiveOrderBucket) Put(ord order.Order) {
+func (n *naive) Put(ord order.Order) {
 	id := ord.Id()
 	n.orders.Put(id, ord)
 	n.totalQuantity += ord.Remained()
 }
 
-func (n *naiveOrderBucket) Remove(orderId int64) {
-	if ord, ok := n.FindOrder(orderId); ok {
-		n.totalQuantity -= ord.Remained()
+func (n *naive) Remove(orderId int64) {
+	if ord, ok := n.Find(orderId); ok {
+		n.Reduce(ord.Remained())
 		n.orders.Remove(orderId)
 	}
 }
 
-func (n *naiveOrderBucket) Reduce(
-	reduceQuantity int64,
+func (n *naive) Reduce(
+	quantity int64,
 ) {
-	n.totalQuantity -= reduceQuantity
+	n.totalQuantity -= quantity
 }
 
-func (n *naiveOrderBucket) NumOrders() int32 {
+func (n *naive) NumOrders() int32 {
 	return int32(n.orders.Size())
 }
 
 // TODO How to return `[]order.Order` without iterating the values? (performance cost of iteration)
 // TODO side effects imposed by the caller
 // preserving execution queue order
-func (n *naiveOrderBucket) AllOrders() []interface{} {
+func (n *naive) AllOrders() []interface{} {
 	return n.orders.Values()
 }
 
 // TODO side effects imposed by the caller
-func (n *naiveOrderBucket) FindOrder(orderId int64) (order.Order, bool) {
+func (n *naive) Find(orderId int64) (order.Order, bool) {
 	if val, ok := n.orders.Get(orderId); ok {
 		return val.(order.Order), true
 	}
@@ -92,18 +90,18 @@ func (n *naiveOrderBucket) FindOrder(orderId int64) (order.Order, bool) {
 }
 
 // TODO side effects imposed by the caller
-func (n *naiveOrderBucket) ForEachOrder(f func(order.Order)) {
+func (n *naive) ForEachOrder(f func(order.Order)) {
 	for _, v := range n.AllOrders() {
 		ord := v.(order.Order)
 		f(ord)
 	}
 }
 
-func (n *naiveOrderBucket) TotalQuantity() int64 {
+func (n *naive) TotalQuantity() int64 {
 	return n.totalQuantity
 }
 
-func (n *naiveOrderBucket) Validate() {
+func (n *naive) Validate() {
 	sum := int64(0)
 
 	accumulator := func(ord order.Order) {
@@ -124,15 +122,7 @@ func (n *naiveOrderBucket) Validate() {
 	}
 }
 
-func min(first, second int64) int64 {
-	if first < second {
-		return first
-	}
-
-	return second
-}
-
-func (n *naiveOrderBucket) Match(
+func (n *naive) Match(
 	toCollect int64,
 	reservedBidPrice int64, // only for bids
 ) *MatcherResult {
@@ -149,7 +139,7 @@ func (n *naiveOrderBucket) Match(
 		}
 
 		ord := v.(order.Order)
-		tradedQuantity := min(ord.Remained(), diff)
+		tradedQuantity := math.Min(ord.Remained(), diff)
 		ord.Fill(tradedQuantity)
 		n.Reduce(tradedQuantity)
 		collected += tradedQuantity
@@ -192,19 +182,19 @@ func (n *naiveOrderBucket) Match(
 	}
 }
 
-func (n *naiveOrderBucket) Less(than btree.Item) bool {
-	return n.price < than.(NaiveOrderBucket).Price()
+func (n *naive) Less(than btree.Item) bool {
+	return n.price < than.(Naive).Price()
 }
 
-func (n *naiveOrderBucket) Marshal(out *bytes.Buffer) error {
-	return MarshalNaiveOrderBucket(n, out)
+func (n *naive) Marshal(out *bytes.Buffer) error {
+	return MarshalNaive(n, out)
 }
 
-func MarshalNaiveOrderBucket(
+func MarshalNaive(
 	in interface{},
 	out *bytes.Buffer,
 ) error {
-	n := in.(*naiveOrderBucket)
+	n := in.(*naive)
 
 	if err := serialization.MarshalInt64(n.price, out); err != nil {
 		return err
@@ -226,10 +216,10 @@ func MarshalNaiveOrderBucket(
 	return nil
 }
 
-func UnmarshalNaiveOrderBucket(
+func UnmarshalNaive(
 	b *bytes.Buffer,
 ) (interface{}, error) {
-	n := naiveOrderBucket{}
+	n := naive{}
 
 	if val, err := serialization.UnmarshalInt64(b); err != nil {
 		return nil, err
@@ -256,15 +246,15 @@ func UnmarshalNaiveOrderBucket(
 	return &n, nil
 }
 
-func NewNaiveOrderBucket(price int64) NaiveOrderBucket {
-	return &naiveOrderBucket{
+func NewNaive(price int64) Naive {
+	return &naive{
 		price:  price,
 		orders: linkedhashmap.New(),
 	}
 }
 
-func NewDumpNaiveOrderBucket(price int64) NaiveOrderBucket {
-	return &naiveOrderBucket{
+func NewDumpNaive(price int64) Naive {
+	return &naive{
 		price: price,
 	}
 }
