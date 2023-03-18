@@ -35,17 +35,52 @@ func (b *batchPayload) Code() int32 {
 	return 1002
 }
 
-func MarshalUsers(in map[int64]map[int32]int64, out *bytes.Buffer) error {
-	return serialization.MarshalInt64Interface(
-		in,
+func MarshalUsers(in interface{}, out *bytes.Buffer) error {
+	users := in.(map[int64]map[int32]int64)
+
+	return serialization.MarshalMap(
+		users,
 		out,
-		serialization.MarshalInt32Int64,
+		serialization.MarshalInt64,
+		func(in interface{}, b *bytes.Buffer) error {
+			return serialization.MarshalMap(
+				in,
+				out,
+				serialization.MarshalInt32,
+				serialization.MarshalInt64,
+			)
+		},
 	)
 }
 
-func UnmarshalUsers(in *bytes.Buffer) (interface{}, error) {
-	return serialization.UnmarshalInt64Interface(
-		in,
-		serialization.UnmarshalInt32Int64,
-	)
+func UnmarshalUser(b *bytes.Buffer) (interface{}, error) {
+	return serialization.UnmarshalInt32Int64(b)
+}
+
+func UnmarshalUsers(b *bytes.Buffer) (interface{}, error) {
+	var val interface{}
+	var err error
+
+	if val, err = serialization.UnmarshalInt32(b); err != nil {
+		return nil, err
+	}
+
+	size := val.(int32)
+	users := make(map[int64]map[int32]int64, size)
+
+	for size > 0 {
+		if k, err := serialization.UnmarshalInt64(b); err != nil {
+			return nil, err
+		} else {
+			if v, err := UnmarshalUser(b); err != nil {
+				return nil, err
+			} else {
+				users[k.(int64)] = v.(map[int32]int64)
+			}
+		}
+
+		size--
+	}
+
+	return users, nil
 }

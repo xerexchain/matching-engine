@@ -174,19 +174,19 @@ func (n *naiveOrderBook) tryMatchInstantly(
 			ord.ReservedBidPrice(),
 		)
 
-		for _, orderId := range res.RemovedOrders() {
+		for _, orderId := range res.RemovedOrders {
 			delete(n.orders, orderId)
 		}
 
 		if tail == nil {
-			head = res.EventHead()
+			head = res.EventHead
 		} else {
-			tail.SetNext(res.EventHead())
+			tail.SetNext(res.EventHead)
 		}
 
-		tail = res.EventTail()
+		tail = res.EventTail
 
-		ord.Fill(res.CollectedQuantity())
+		ord.Fill(res.CollectedQuantity)
 		// collected += res.CollectedQuantity()
 
 		if buck.TotalQuantity() == 0 {

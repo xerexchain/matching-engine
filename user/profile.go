@@ -2,7 +2,6 @@ package user
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 
 	"github.com/mitchellh/hashstructure/v2"
@@ -21,21 +20,19 @@ type profile struct {
 	UserId             int64
 	AdjustmentsCounter int64 // protects from double adjustment
 	Status
-	Balance         map[int32]int64       // currency -> balance
-	MarginPositions map[int32]interface{} // symbolId -> margin position
+	Balance         map[int32]int64                   // currency -> balance
+	MarginPositions map[int32]position.MarginPosition // symbolId -> margin position
 	_               struct{}
 }
 
 func (p *profile) MarginPositionOf(
 	symbolId int32,
 ) (position.MarginPosition, error) {
-	val, ok := p.MarginPositions[symbolId]
-
-	if !ok {
+	if pos, ok := p.MarginPositions[symbolId]; !ok {
 		return nil, fmt.Errorf("not found position for symbol %v", symbolId)
+	} else {
+		return pos, nil
 	}
-
-	return val.(position.MarginPosition), nil
 }
 
 // TODO This not equals to java stateHash
@@ -58,7 +55,7 @@ func NewProfile(userId int64, status Status) Profile {
 		UserId:          userId,
 		Status:          status,
 		Balance:         make(map[int32]int64),
-		MarginPositions: make(map[int32]interface{}),
+		MarginPositions: make(map[int32]position.MarginPosition),
 	}
 }
 
@@ -66,66 +63,75 @@ func NewProfile(userId int64, status Status) Profile {
 func MarshalProfile(in interface{}, out *bytes.Buffer) error {
 	p := in.(*profile)
 
-	if err := binary.Write(out, binary.LittleEndian, p.UserId); err != nil {
+	if err := serialization.MarshalInt64(p.UserId, out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt32Interface(
+	if err := serialization.MarshalMap(
 		p.MarginPositions,
 		out,
+		serialization.MarshalInt32,
 		position.MarshalMarginPosition,
 	); err != nil {
 		return err
 	}
 
-	if err := binary.Write(out, binary.LittleEndian, p.AdjustmentsCounter); err != nil {
+	if err := serialization.MarshalInt64(p.AdjustmentsCounter, out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt32Int64(p.Balance, out); err != nil {
+	if err := serialization.MarshalMap(
+		p.Balance,
+		out,
+		serialization.MarshalInt32,
+		serialization.MarshalInt64,
+	); err != nil {
 		return err
 	}
 
-	if err := binary.Write(out, binary.LittleEndian, p.Status); err != nil {
+	if err := serialization.MarshalInt8(int8(p.Status), out); err != nil {
 		return err
 	}
 
 	return nil
 }
 
+func UnmarshalBalance(b *bytes.Buffer) (interface{}, error) {
+	return serialization.UnmarshalInt32Int64(b)
+}
+
 // TODO incompatible with exchange-core
-func UnmarshalProfile(in *bytes.Buffer) (interface{}, error) {
+func UnmarshalProfile(b *bytes.Buffer) (interface{}, error) {
 	p := profile{}
 
-	if err := binary.Read(in, binary.LittleEndian, &(p.UserId)); err != nil {
+	if val, err := serialization.UnmarshalInt64(b); err != nil {
 		return nil, err
+	} else {
+		p.UserId = val.(int64)
 	}
 
-	positions, err := serialization.UnmarshalInt32Interface(
-		in,
-		position.UnmarshalMarginPosition,
-	)
-
-	if err != nil {
+	if positions, err := position.UnmarshalMarginPositions(b); err != nil {
 		return nil, err
+	} else {
+		p.MarginPositions = positions.(map[int32]position.MarginPosition)
 	}
 
-	p.MarginPositions = positions.(map[int32]interface{})
-
-	if err := binary.Read(in, binary.LittleEndian, &(p.AdjustmentsCounter)); err != nil {
+	if val, err := serialization.UnmarshalInt64(b); err != nil {
 		return nil, err
+	} else {
+		p.AdjustmentsCounter = val.(int64)
 	}
 
-	balance, err := serialization.UnmarshalInt32Int64(in)
-
-	if err != nil {
+	if balance, err := UnmarshalBalance(b); err != nil {
 		return nil, err
+	} else {
+		p.Balance = balance.(map[int32]int64)
 	}
 
-	p.Balance = balance.(map[int32]int64)
-
-	if err := binary.Read(in, binary.LittleEndian, &(p.Status)); err != nil {
+	if val, err := serialization.UnmarshalInt8(b); err != nil {
 		return nil, err
+	} else {
+		p.Status = FromByte(val.(int8))
 	}
 
 	return &p, nil

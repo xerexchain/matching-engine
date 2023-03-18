@@ -2,7 +2,6 @@ package bucket
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 
 	"github.com/emirpasic/gods/maps/linkedhashmap"
@@ -20,6 +19,7 @@ type NaiveOrderBucket interface {
 	Price() int64
 	Put(order.Order)
 	Remove(orderId int64)
+	Reduce(educeQuantity int64)
 	NumOrders() int32
 	AllOrders() []interface{}
 	FindOrder(orderId int64) (order.Order, bool)
@@ -28,47 +28,23 @@ type NaiveOrderBucket interface {
 	Validate()
 	Match(
 		toCollect int64,
-		reserveBidPrice int64,
-	) MatcherResult
+		reservedBidPrice int64,
+	) *MatcherResult
 }
 
-type MatcherResult interface {
-	EventHead() event.TradeEvent
-	EventTail() event.TradeEvent
-	CollectedQuantity() int64
-	RemovedOrders() []int64
-}
-
-// TODO Comparable<OrdersBucketNaive>, compareTo, hashCode, equals
 type naiveOrderBucket struct {
 	price         int64
-	totalQuantity int64 // FIX because of this field, functions have side effects.
+	totalQuantity int64 // FIX this field imposes side effects on functions.
 	orders        *linkedhashmap.Map
 	_             struct{}
 }
 
-type matcherResult struct {
-	head              event.TradeEvent
-	tail              event.TradeEvent
-	collectedQuantity int64
-	removedOrders     []int64
+type MatcherResult struct {
+	EventHead         event.TradeEvent
+	EventTail         event.TradeEvent
+	CollectedQuantity int64
+	RemovedOrders     []int64
 	_                 struct{}
-}
-
-func (m *matcherResult) EventHead() event.TradeEvent {
-	return m.head
-}
-
-func (m *matcherResult) EventTail() event.TradeEvent {
-	return m.tail
-}
-
-func (m *matcherResult) CollectedQuantity() int64 {
-	return m.collectedQuantity
-}
-
-func (m *matcherResult) RemovedOrders() []int64 {
-	return m.removedOrders
 }
 
 func (n *naiveOrderBucket) Price() int64 {
@@ -82,16 +58,16 @@ func (n *naiveOrderBucket) Put(ord order.Order) {
 }
 
 func (n *naiveOrderBucket) Remove(orderId int64) {
-	val, ok := n.orders.Get(orderId)
-
-	if !ok {
-		return
+	if ord, ok := n.FindOrder(orderId); ok {
+		n.totalQuantity -= ord.Remained()
+		n.orders.Remove(orderId)
 	}
+}
 
-	ord := val.(order.Order)
-
-	n.totalQuantity -= ord.Remained()
-	n.orders.Remove(orderId)
+func (n *naiveOrderBucket) Reduce(
+	reduceQuantity int64,
+) {
+	n.totalQuantity -= reduceQuantity
 }
 
 func (n *naiveOrderBucket) NumOrders() int32 {
@@ -100,26 +76,25 @@ func (n *naiveOrderBucket) NumOrders() int32 {
 
 // TODO How to return `[]order.Order` without iterating the values? (performance cost of iteration)
 // TODO side effects imposed by the caller
+// preserving execution queue order
 func (n *naiveOrderBucket) AllOrders() []interface{} {
 	return n.orders.Values()
 }
 
 // TODO side effects imposed by the caller
 func (n *naiveOrderBucket) FindOrder(orderId int64) (order.Order, bool) {
-	val, ok := n.orders.Get(orderId)
-
-	if !ok {
-		return nil, false
+	if val, ok := n.orders.Get(orderId); ok {
+		return val.(order.Order), true
 	}
 
-	return val.(order.Order), true
+	return nil, false
 }
 
 // TODO side effects imposed by the caller
 func (n *naiveOrderBucket) ForEachOrder(f func(order.Order)) {
-	for _, v := range n.orders.Values() {
-		order := v.(order.Order)
-		f(order)
+	for _, v := range n.AllOrders() {
+		ord := v.(order.Order)
+		f(ord)
 	}
 }
 
@@ -130,10 +105,11 @@ func (n *naiveOrderBucket) TotalQuantity() int64 {
 func (n *naiveOrderBucket) Validate() {
 	sum := int64(0)
 
-	for _, v := range n.orders.Values() {
-		ord := v.(order.Order)
+	accumulator := func(ord order.Order) {
 		sum += ord.Remained()
 	}
+
+	n.ForEachOrder(accumulator)
 
 	if sum != n.totalQuantity {
 		panic(
@@ -147,47 +123,43 @@ func (n *naiveOrderBucket) Validate() {
 	}
 }
 
+func min(first, second int64) int64 {
+	if first < second {
+		return first
+	}
+
+	return second
+}
+
 func (n *naiveOrderBucket) Match(
 	toCollect int64,
-	reserveBidPrice int64, // only for bids
-) MatcherResult {
+	reservedBidPrice int64, // only for bids
+) *MatcherResult {
 	collected := int64(0)
 	removedOrders := []int64{}
 	var head, tail event.TradeEvent
 	var bidderHoldPrice int64
 
-	for _, orderId := range n.orders.Keys() {
+	for _, v := range n.AllOrders() {
 		diff := toCollect - collected
 
 		if diff == 0 {
 			break
 		}
 
-		var tradedQuantity int64
-		var fullMatch bool
+		ord := v.(order.Order)
+		tradedQuantity := min(ord.Remained(), diff)
+		ord.Fill(tradedQuantity)
+		n.Reduce(tradedQuantity)
+		collected += tradedQuantity
 
-		val, _ := n.orders.Get(orderId)
-		ord := val.(order.Order)
-		rem := ord.Remained()
-
-		if rem <= diff {
-			ord.Fill(rem)
+		if ord.Remained() == 0 {
 			n.Remove(ord.Id())
-			n.totalQuantity -= rem
-			collected += rem
-			tradedQuantity = rem
-			fullMatch = true
 			removedOrders = append(removedOrders, ord.Id())
-		} else {
-			ord.Fill(diff)
-			n.totalQuantity -= diff
-			collected += diff
-			tradedQuantity = diff
-			fullMatch = false
 		}
 
 		if ord.Action() == order.Ask {
-			bidderHoldPrice = reserveBidPrice
+			bidderHoldPrice = reservedBidPrice
 		} else {
 			bidderHoldPrice = ord.ReservedBidPrice()
 		}
@@ -195,7 +167,7 @@ func (n *naiveOrderBucket) Match(
 		tradeEvent := event.NewTradeEvent(
 			ord.Id(),
 			ord.UserId(),
-			fullMatch,
+			ord.Remained() == 0,
 			collected == toCollect,
 			ord.Price(),
 			tradedQuantity,
@@ -211,11 +183,11 @@ func (n *naiveOrderBucket) Match(
 		tail = tradeEvent
 	}
 
-	return &matcherResult{
-		head:              head,
-		tail:              tail,
-		collectedQuantity: collected,
-		removedOrders:     removedOrders,
+	return &MatcherResult{
+		EventHead:         head,
+		EventTail:         tail,
+		CollectedQuantity: collected,
+		RemovedOrders:     removedOrders,
 	}
 }
 
@@ -233,21 +205,20 @@ func MarshalNaiveOrderBucket(
 ) error {
 	n := in.(*naiveOrderBucket)
 
-	if err := binary.Write(out, binary.LittleEndian, n.price); err != nil {
+	if err := serialization.MarshalInt64(n.price, out); err != nil {
 		return err
 	}
 
-	err := serialization.MarshalInt64InterfaceLinkedHashMap(
+	if err := serialization.MarshalLinkedHashMap(
 		n.orders,
 		out,
+		serialization.MarshalInt64,
 		order.MarshalOrder,
-	)
-
-	if err != nil {
+	); err != nil {
 		return err
 	}
 
-	if err := binary.Write(out, binary.LittleEndian, n.totalQuantity); err != nil {
+	if err := serialization.MarshalInt64(n.totalQuantity, out); err != nil {
 		return err
 	}
 
@@ -255,27 +226,30 @@ func MarshalNaiveOrderBucket(
 }
 
 func UnmarshalNaiveOrderBucket(
-	in *bytes.Buffer,
+	b *bytes.Buffer,
 ) (interface{}, error) {
 	n := naiveOrderBucket{}
 
-	if err := binary.Read(in, binary.LittleEndian, &(n.price)); err != nil {
+	if val, err := serialization.UnmarshalInt64(b); err != nil {
 		return nil, err
+	} else {
+		n.price = val.(int64)
 	}
 
-	orders, err := serialization.UnmarshalInt64InterfaceLinkedHashMap(
-		in,
+	if orders, err := serialization.UnmarshalLinkedHashMap(
+		b,
+		serialization.UnmarshalInt64,
 		order.UnMarshalOrder,
-	)
-
-	if err != nil {
+	); err != nil {
 		return nil, err
+	} else {
+		n.orders = orders
 	}
 
-	n.orders = orders.(*linkedhashmap.Map)
-
-	if err := binary.Read(in, binary.LittleEndian, &(n.totalQuantity)); err != nil {
+	if val, err := serialization.UnmarshalInt64(b); err != nil {
 		return nil, err
+	} else {
+		n.totalQuantity = val.(int64)
 	}
 
 	return &n, nil
