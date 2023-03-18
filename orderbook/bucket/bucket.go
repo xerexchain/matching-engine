@@ -214,7 +214,7 @@ func MarshalNaiveOrderBucket(
 		n.orders,
 		out,
 		serialization.MarshalInt64,
-		order.MarshalOrder,
+		order.Marshal,
 	); err != nil {
 		return err
 	}
@@ -240,7 +240,7 @@ func UnmarshalNaiveOrderBucket(
 	if orders, err := serialization.UnmarshalLinkedHashMap(
 		b,
 		serialization.UnmarshalInt64,
-		order.UnMarshalOrder,
+		order.UnMarshal,
 	); err != nil {
 		return nil, err
 	} else {

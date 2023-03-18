@@ -37,9 +37,9 @@ type OrderBook interface {
 	PlaceGTCOrder(order.Order) *MatcherResult
 	PlaceIOCOrder(order.Order) *MatcherResult
 	PlaceFOKBudgetOrder(order.Order) *MatcherResult
-	MoveOrder(order.Move) *MatcherResult     // TODO adjust balance
-	ReduceOrder(order.Reduce) *MatcherResult // TODO adjust balance // Decrease the size of the order by specific number of lots
-	CancelOrder(order.Cancel) *MatcherResult // TODO adjust balance
+	MoveOrder(int64, int64) *MatcherResult   // TODO adjust balance
+	ReduceOrder(int64, int64) *MatcherResult // TODO adjust balance // Decrease the size of the order by specific number of lots
+	CancelOrder(int64) *MatcherResult        // TODO adjust balance
 	UserOrders(userId int64) []order.Order
 	AskOrders() []interface{} // TODO How to return []order.Order
 	BidOrders() []interface{} // TODO How to return []order.Order
@@ -307,10 +307,8 @@ func (n *naiveOrderBook) PlaceFOKBudgetOrder(
 
 // TODO order.uid != cmd.uid
 func (n *naiveOrderBook) MoveOrder(
-	m order.Move,
+	orderId, toPrice int64,
 ) *MatcherResult {
-	orderId := m.OrderId()
-	toPrice := m.ToPrice()
 	ord, ok := n.orders[orderId]
 
 	if !ok {
@@ -344,12 +342,7 @@ func (n *naiveOrderBook) MoveOrder(
 		ord.Action(),
 	)
 
-	reduceOrder := order.NewReduceOrder(
-		ord.Id(),
-		ord.Remained(),
-	)
-
-	reduceRes := n.ReduceOrder(reduceOrder)
+	reduceRes := n.ReduceOrder(ord.Id(), ord.Remained())
 	gtcRes := n.PlaceGTCOrder(newOrder)
 
 	reduceRes.EventTail.SetNext(gtcRes.EventHead)
@@ -363,11 +356,8 @@ func (n *naiveOrderBook) MoveOrder(
 
 // TODO order.uid != cmd.uid
 func (n *naiveOrderBook) ReduceOrder(
-	r order.Reduce,
+	orderId, reduceQuantity int64,
 ) *MatcherResult {
-	orderId := r.OrderId()
-	reduceQuantity := r.ReduceQuantity()
-
 	if reduceQuantity <= 0 {
 		return &MatcherResult{
 			ResultCode: resultcode.MatchingReduceFailedWrongQuantity,
@@ -429,9 +419,8 @@ func (n *naiveOrderBook) ReduceOrder(
 
 // TODO order.uid == cmd.uid
 func (n *naiveOrderBook) CancelOrder(
-	c order.Cancel,
+	orderId int64,
 ) *MatcherResult {
-	orderId := c.OrderId()
 	ord, ok := n.orders[orderId]
 
 	if !ok {
@@ -440,12 +429,7 @@ func (n *naiveOrderBook) CancelOrder(
 		}
 	}
 
-	reduceOrder := order.NewReduceOrder(
-		ord.Id(),
-		ord.Remained(),
-	)
-
-	return n.ReduceOrder(reduceOrder)
+	return n.ReduceOrder(ord.Id(), ord.Remained())
 }
 
 // TODO performance

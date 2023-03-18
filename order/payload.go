@@ -3,7 +3,7 @@ package order
 import "github.com/xerexchain/matching-engine/order/action"
 
 // TODO EqualsAndHashCode
-// TODO rename
+// TODO rename or delete
 type placePayload struct {
 	orderId      int64 // TODO Is it redundant?
 	userId       int64
@@ -19,7 +19,7 @@ type placePayload struct {
 }
 
 // TODO EqualsAndHashCode
-// TODO rename
+// TODO rename or delete
 type cancelPayload struct {
 	orderId   int64
 	userId    int64
@@ -29,7 +29,7 @@ type cancelPayload struct {
 }
 
 // TODO EqualsAndHashCode
-// TODO rename
+// TODO rename or delete
 type movePayload struct {
 	orderId   int64
 	userId    int64
@@ -40,7 +40,7 @@ type movePayload struct {
 }
 
 // TODO EqualsAndHashCode
-// TODO rename
+// TODO rename or delete
 type reducePayload struct {
 	orderId        int64
 	userId         int64

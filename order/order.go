@@ -29,23 +29,6 @@ type Order interface {
 }
 
 // TODO equals and hashCode overriden, timestamp ignored in equals, statehash impl
-type Move interface {
-	OrderId() int64
-	ToPrice() int64
-}
-
-// TODO equals and hashCode overriden, timestamp ignored in equals, statehash impl
-type Reduce interface {
-	OrderId() int64
-	ReduceQuantity() int64 // TODO rename
-}
-
-// TODO equals and hashCode overriden, timestamp ignored in equals, statehash impl
-type Cancel interface {
-	OrderId() int64
-}
-
-// TODO equals and hashCode overriden, timestamp ignored in equals, statehash impl
 // No external references allowed to such object - order objects only live inside OrderBook.
 type order struct {
 	Id_               int64
@@ -56,23 +39,6 @@ type order struct {
 	ReservedBidPrice_ int64 // new orders - reserved price for fast moves of GTC bid orders in exchange mode // TODO logic
 	Timestamp_        int64
 	Action_           action.Action
-}
-
-// TODO equals and hashCode overriden, timestamp ignored in equals, statehash impl
-type move struct {
-	OrderId_  int64
-	NewPrice_ int64
-}
-
-// TODO equals and hashCode overriden, timestamp ignored in equals, statehash impl
-type reduce struct {
-	OrderId_        int64
-	ReduceQuantity_ int64
-}
-
-// TODO equals and hashCode overriden, timestamp ignored in equals, statehash impl
-type cancel struct {
-	OrderId_ int64
 }
 
 func (o *order) Id() int64 {
@@ -95,25 +61,27 @@ func (o *order) Remained() int64 {
 	return o.Quantity_ - o.Filled_
 }
 
-// TODO side effects
 func (o *order) Fill(quantity int64) {
 	o.Filled_ += quantity
 
+	if o.Quantity_ < 0 {
+		panic("Fill: reduced to less than zero")
+	}
+
 	if o.Filled_ > o.Quantity_ {
-		panic("filled more than quantity")
+		panic("Fill: filled more than quantity")
 	}
 }
 
-// TODO side effects
 func (o *order) Reduce(quantity int64) {
 	o.Quantity_ -= quantity
 
 	if o.Quantity_ < 0 {
-		panic("reduced to less than zero")
+		panic("Reduce: reduced to less than zero")
 	}
 
 	if o.Filled_ > o.Quantity_ {
-		panic("filled more than quantity")
+		panic("Reduce: filled more than quantity")
 	}
 }
 
@@ -146,18 +114,10 @@ func (o *order) Hash() uint64 {
 }
 
 func (o *order) Marshal(out *bytes.Buffer) error {
-	return MarshalOrder(o, out)
+	return Marshal(o, out)
 }
 
-func (r *reduce) OrderId() int64 {
-	return r.OrderId_
-}
-
-func (r *reduce) ReduceQuantity() int64 {
-	return r.ReduceQuantity_
-}
-
-func MarshalOrder(in interface{}, out *bytes.Buffer) error {
+func Marshal(in interface{}, out *bytes.Buffer) error {
 	o := in.(*order)
 
 	if err := serialization.MarshalInt64(o.Id_, out); err != nil {
@@ -188,7 +148,7 @@ func MarshalOrder(in interface{}, out *bytes.Buffer) error {
 	return nil
 }
 
-func UnMarshalOrder(b *bytes.Buffer) (interface{}, error) {
+func UnMarshal(b *bytes.Buffer) (interface{}, error) {
 	o := order{}
 
 	if val, err := serialization.UnmarshalInt64(b); err != nil {
@@ -261,14 +221,5 @@ func New(
 		ReservedBidPrice_: reservedBidPrice,
 		Timestamp_:        timestamp,
 		Action_:           action,
-	}
-}
-
-func NewReduceOrder(
-	orderId, reduceQuantity int64,
-) Reduce {
-	return &reduce{
-		OrderId_:        orderId,
-		ReduceQuantity_: reduceQuantity,
 	}
 }
