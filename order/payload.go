@@ -45,7 +45,7 @@ type reducePayload struct {
 	orderId        int64
 	userId         int64
 	symbolId       int32 // TODO Is it redundant?
-	reduceQuantity int64
+	quantity int64
 	timestamp      int64
 	_              struct{}
 }

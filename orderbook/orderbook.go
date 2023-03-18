@@ -24,8 +24,8 @@ import (
 // TODO IOC_BUDGET and FOK support
 
 const (
-	Naive  byte = 0
-	Direct byte = 2
+	Naive_  byte = 0
+	Direct_ byte = 2
 )
 
 type OrderBook interface {
@@ -34,21 +34,21 @@ type OrderBook interface {
 	Symbol() symbol.Symbol
 	NumAskBuckets() int32
 	NumBidBuckets() int32
-	PlaceGTCOrder(order.Order) *MatcherResult
-	PlaceIOCOrder(order.Order) *MatcherResult
-	PlaceFOKBudgetOrder(order.Order) *MatcherResult
-	MoveOrder(int64, int64) *MatcherResult   // TODO adjust balance
-	ReduceOrder(int64, int64) *MatcherResult // TODO adjust balance // Decrease the size of the order by specific number of lots
-	CancelOrder(int64) *MatcherResult        // TODO adjust balance
-	UserOrders(userId int64) []order.Order
+	PlaceGTC(order.Order) *MatcherResult
+	PlaceIOC(order.Order) *MatcherResult
+	PlaceFOKBudget(order.Order) *MatcherResult
+	Move(int64, int64) *MatcherResult   // TODO adjust balance
+	Reduce(int64, int64) *MatcherResult // TODO adjust balance // Decrease the size of the order by specific number of lots
+	Cancel(int64) *MatcherResult        // TODO adjust balance
+	UserOrders(int64) []order.Order
 	AskOrders() []interface{} // TODO How to return []order.Order
 	BidOrders() []interface{} // TODO How to return []order.Order
-	FillAsks(size int32, data *L2MarketData)
-	FillBids(size int32, data *L2MarketData)
+	FillAsks(int32, *L2MarketData)
+	FillBids(int32, *L2MarketData)
 	ValidateInternalState()
 }
 
-type NaiveOrderBook interface {
+type Naive interface {
 	OrderBook
 }
 
@@ -59,7 +59,7 @@ type MatcherResult struct {
 	_ struct{}
 }
 
-type naiveOrderBook struct {
+type naive struct {
 	askBuckets *btree.BTree
 	bidBuckets *btree.BTree
 	symbol     symbol.Symbol
@@ -67,7 +67,7 @@ type naiveOrderBook struct {
 	_          struct{}
 }
 
-func (n *naiveOrderBook) sameBuckets(
+func (n *naive) sameBucketsAs(
 	act action.Action,
 ) *btree.BTree {
 	if act == action.Ask {
@@ -77,7 +77,7 @@ func (n *naiveOrderBook) sameBuckets(
 	}
 }
 
-func (n *naiveOrderBook) oppositeBuckets(
+func (n *naive) oppositeBucketsTo(
 	act action.Action,
 ) *btree.BTree {
 	if act == action.Ask {
@@ -87,7 +87,7 @@ func (n *naiveOrderBook) oppositeBuckets(
 	}
 }
 
-func (n *naiveOrderBook) findBucket(
+func (n *naive) findBucket(
 	price int64,
 	buckets *btree.BTree,
 ) (orderbucket.Naive, bool) {
@@ -112,7 +112,7 @@ func (n *naiveOrderBook) findBucket(
 	return res, ok
 }
 
-func (n *naiveOrderBook) budgetToFill(
+func (n *naive) budgetToFill(
 	toCollect int64,
 	act action.Action,
 ) (int64, int64) {
@@ -148,7 +148,7 @@ func (n *naiveOrderBook) budgetToFill(
 	return budget, collected
 }
 
-func (n *naiveOrderBook) tryMatchInstantly(
+func (n *naive) tryMatchInstantly(
 	ord order.Order,
 ) *MatcherResult {
 	pivot := orderbucket.NewDumpNaive(ord.Price())
@@ -193,7 +193,7 @@ func (n *naiveOrderBook) tryMatchInstantly(
 		n.askBuckets.DescendLessOrEqual(pivot, f)
 	}
 
-	targetBucks := n.oppositeBuckets(ord.Action())
+	targetBucks := n.oppositeBucketsTo(ord.Action())
 
 	// TODO Is it necessary?
 	for _, buck := range emptyBucks {
@@ -207,19 +207,19 @@ func (n *naiveOrderBook) tryMatchInstantly(
 	}
 }
 
-func (n *naiveOrderBook) Symbol() symbol.Symbol {
+func (n *naive) Symbol() symbol.Symbol {
 	return n.symbol
 }
 
-func (n *naiveOrderBook) NumAskBuckets() int32 {
+func (n *naive) NumAskBuckets() int32 {
 	return int32(n.askBuckets.Len())
 }
 
-func (n *naiveOrderBook) NumBidBuckets() int32 {
+func (n *naive) NumBidBuckets() int32 {
 	return int32(n.bidBuckets.Len())
 }
 
-func (n *naiveOrderBook) PlaceGTCOrder(
+func (n *naive) PlaceGTC(
 	ord order.Order,
 ) *MatcherResult {
 	res := n.tryMatchInstantly(ord)
@@ -243,7 +243,7 @@ func (n *naiveOrderBook) PlaceGTCOrder(
 		return res
 	}
 
-	targetBucks := n.sameBuckets(ord.Action())
+	targetBucks := n.sameBucketsAs(ord.Action())
 
 	buck, ok := n.findBucket(ord.Price(), targetBucks)
 
@@ -258,7 +258,7 @@ func (n *naiveOrderBook) PlaceGTCOrder(
 	return res
 }
 
-func (n *naiveOrderBook) PlaceIOCOrder(
+func (n *naive) PlaceIOC(
 	ord order.Order,
 ) *MatcherResult {
 	res := n.tryMatchInstantly(ord)
@@ -279,7 +279,7 @@ func (n *naiveOrderBook) PlaceIOCOrder(
 	return res
 }
 
-func (n *naiveOrderBook) PlaceFOKBudgetOrder(
+func (n *naive) PlaceFOKBudget(
 	ord order.Order,
 ) *MatcherResult {
 	budget, collected := n.budgetToFill(ord.Remained(), ord.Action())
@@ -306,7 +306,7 @@ func (n *naiveOrderBook) PlaceFOKBudgetOrder(
 }
 
 // TODO order.uid != cmd.uid
-func (n *naiveOrderBook) MoveOrder(
+func (n *naive) Move(
 	orderId, toPrice int64,
 ) *MatcherResult {
 	ord, ok := n.orders[orderId]
@@ -342,8 +342,8 @@ func (n *naiveOrderBook) MoveOrder(
 		ord.Action(),
 	)
 
-	reduceRes := n.ReduceOrder(ord.Id(), ord.Remained())
-	gtcRes := n.PlaceGTCOrder(newOrder)
+	reduceRes := n.Reduce(ord.Id(), ord.Remained())
+	gtcRes := n.PlaceGTC(newOrder)
 
 	reduceRes.EventTail.SetNext(gtcRes.EventHead)
 
@@ -355,10 +355,10 @@ func (n *naiveOrderBook) MoveOrder(
 }
 
 // TODO order.uid != cmd.uid
-func (n *naiveOrderBook) ReduceOrder(
-	orderId, reduceQuantity int64,
+func (n *naive) Reduce(
+	orderId, quantity int64,
 ) *MatcherResult {
-	if reduceQuantity <= 0 {
+	if quantity <= 0 {
 		return &MatcherResult{
 			ResultCode: resultcode.MatchingReduceFailedWrongQuantity,
 		}
@@ -372,11 +372,11 @@ func (n *naiveOrderBook) ReduceOrder(
 		}
 	}
 
-	if reduceQuantity > ord.Remained() {
-		reduceQuantity = ord.Remained()
+	if quantity > ord.Remained() {
+		quantity = ord.Remained()
 	}
 
-	targetBucks := n.sameBuckets(ord.Action())
+	targetBucks := n.sameBucketsAs(ord.Action())
 
 	buck, ok := n.findBucket(ord.Price(), targetBucks)
 
@@ -390,8 +390,8 @@ func (n *naiveOrderBook) ReduceOrder(
 		)
 	}
 
-	buck.Reduce(reduceQuantity)
-	ord.Reduce(reduceQuantity)
+	buck.Reduce(quantity)
+	ord.Reduce(quantity)
 
 	if ord.Remained() == 0 {
 		delete(n.orders, orderId)
@@ -406,7 +406,7 @@ func (n *naiveOrderBook) ReduceOrder(
 		orderId,
 		ord.Remained() == 0,
 		ord.Price(),
-		reduceQuantity,
+		quantity,
 		ord.Action(),
 	)
 
@@ -418,7 +418,7 @@ func (n *naiveOrderBook) ReduceOrder(
 }
 
 // TODO order.uid == cmd.uid
-func (n *naiveOrderBook) CancelOrder(
+func (n *naive) Cancel(
 	orderId int64,
 ) *MatcherResult {
 	ord, ok := n.orders[orderId]
@@ -429,11 +429,11 @@ func (n *naiveOrderBook) CancelOrder(
 		}
 	}
 
-	return n.ReduceOrder(ord.Id(), ord.Remained())
+	return n.Reduce(ord.Id(), ord.Remained())
 }
 
 // TODO performance
-func (n *naiveOrderBook) UserOrders(
+func (n *naive) UserOrders(
 	userId int64,
 ) []order.Order {
 	res := []order.Order{}
@@ -458,7 +458,7 @@ func (n *naiveOrderBook) UserOrders(
 
 // TODO performance
 // TODO return []order.Order
-func (n *naiveOrderBook) AskOrders() []interface{} {
+func (n *naive) AskOrders() []interface{} {
 	res := []interface{}{}
 
 	n.askBuckets.Ascend(func(item btree.Item) bool {
@@ -474,7 +474,7 @@ func (n *naiveOrderBook) AskOrders() []interface{} {
 
 // TODO performance
 // TODO return []order.Order
-func (n *naiveOrderBook) BidOrders() []interface{} {
+func (n *naive) BidOrders() []interface{} {
 	res := []interface{}{}
 
 	// TODO duplicate code
@@ -489,7 +489,7 @@ func (n *naiveOrderBook) BidOrders() []interface{} {
 	return res
 }
 
-func (n *naiveOrderBook) FillAsks(size int32, data L2MarketData) {
+func (n *naive) FillAsks(size int32, data L2MarketData) {
 	if size > data.AskSize() {
 		size = data.AskSize()
 	}
@@ -513,7 +513,7 @@ func (n *naiveOrderBook) FillAsks(size int32, data L2MarketData) {
 	data.LimitAskViewTo(size)
 }
 
-func (n *naiveOrderBook) FillBids(size int32, data L2MarketData) {
+func (n *naive) FillBids(size int32, data L2MarketData) {
 	if size > data.BidSize() {
 		size = data.BidSize()
 	}
@@ -537,7 +537,7 @@ func (n *naiveOrderBook) FillBids(size int32, data L2MarketData) {
 	data.LimitBidViewTo(size)
 }
 
-func (n *naiveOrderBook) ValidateInternalState() {
+func (n *naive) ValidateInternalState() {
 	f := func(item btree.Item) bool {
 		buck := item.(orderbucket.Naive)
 		buck.Validate()
@@ -549,19 +549,19 @@ func (n *naiveOrderBook) ValidateInternalState() {
 	n.askBuckets.Descend(f)
 }
 
-func (n *naiveOrderBook) Hash() uint64 {
+func (n *naive) Hash() uint64 {
 	// TODO impl
 	return 0
 }
 
-func (n *naiveOrderBook) Marshal(out *bytes.Buffer) error {
-	return MarshalNaiveOrderBook(n, out)
+func (n *naive) Marshal(out *bytes.Buffer) error {
+	return MarshalNaive(n, out)
 }
 
-func MarshalNaiveOrderBook(in interface{}, out *bytes.Buffer) error {
-	n := in.(*naiveOrderBook)
+func MarshalNaive(in interface{}, out *bytes.Buffer) error {
+	n := in.(*naive)
 
-	if err := serialization.MarshalInt8(Naive, out); err != nil {
+	if err := serialization.MarshalInt8(Naive_, out); err != nil {
 		return err
 	}
 
@@ -588,8 +588,8 @@ func MarshalNaiveOrderBook(in interface{}, out *bytes.Buffer) error {
 	return nil
 }
 
-func UnmarshalNaiveOrderBook(b *bytes.Buffer) (interface{}, error) {
-	n := naiveOrderBook{}
+func UnmarshalNaive(b *bytes.Buffer) (interface{}, error) {
+	n := naive{}
 
 	if s, err := symbol.UnmarshalSymbol(b); err != nil {
 		return nil, err

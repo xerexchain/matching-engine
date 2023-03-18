@@ -1,7 +1,7 @@
 package orderbook
 
 // TODO EqualsAndHashCode
-// TODO rename
+// TODO rename or delete
 type payload struct {
 	symbolId  int32
 	quantity  int32 // TODO doc
