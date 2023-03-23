@@ -7,7 +7,7 @@ const (
 	Suspended
 )
 
-func FromByte(b int8) Status {
+func StatusFromByte(b int8) Status {
 	switch b {
 	case int8(Active):
 		return Active

@@ -131,7 +131,7 @@ func UnmarshalProfile(b *bytes.Buffer) (interface{}, error) {
 	if val, err := serialization.UnmarshalInt8(b); err != nil {
 		return nil, err
 	} else {
-		p.Status = FromByte(val.(int8))
+		p.Status = StatusFromByte(val.(int8))
 	}
 
 	return &p, nil
