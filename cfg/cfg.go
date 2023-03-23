@@ -1,32 +1,44 @@
-package config
+package cfg
 
 import "github.com/pierrec/lz4/v4"
 
 // TODO move to init?
 var (
 	lz4Fast = &fastCompressor{}
+	lz4High = &highCompressor{}
 )
 
 type InitialState interface {
-	FromSnapshot() bool // rename // delete?
+	IsEmptySnapshot() bool // rename?
 	SnapshotId() int64
 	PanicIfSnapshotNotFound() bool
 	JournalTimestampNs() int64
 }
 
 // note: not thread safe
-type Compressor interface{}
+type Compressor interface {
+	Compress(src []byte, dst []byte) (int, error)
+}
 
 type highCompressor struct {
 	c *lz4.CompressorHC
 }
+
 type fastCompressor struct {
 	c *lz4.Compressor
 }
 
+func (h *highCompressor) Compress(src []byte, dst []byte) (int, error) {
+	return h.c.CompressBlock(src, dst)
+}
+
+func (f *fastCompressor) Compress(src []byte, dst []byte) (int, error) {
+	return f.c.CompressBlock(src, dst)
+}
+
 // note: using LZ4 HIGH will require about twice more time
 // note: using LZ4 HIGH is not recommended because of very high impact on throughput
-type DiskProcCfg struct {
+type DiskProc struct {
 	StorageFolder      string
 	JournalBuffSize    int32
 	JournalFileMaxSize int64
@@ -40,8 +52,8 @@ type DiskProcCfg struct {
 	_                             struct{}
 }
 
-func DefaultDiskProcCfg() *DiskProcCfg {
-	return &DiskProcCfg{
+func DefaultDiskProc() *DiskProc {
+	return &DiskProc{
 		StorageFolder:                 "./dumps",
 		JournalBuffSize:               256 * 1024,         // 256 KB - TODO calculate based on ringBufferSize
 		JournalFileMaxSize:            4000 * 1024 * 1024, // 4 GB
