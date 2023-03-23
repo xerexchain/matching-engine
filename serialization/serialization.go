@@ -13,6 +13,21 @@ type Marshalable interface {
 	Marshal(out *bytes.Buffer) error
 }
 
+type Unmarshalable interface {
+	Unmarshal(in *bytes.Buffer) error
+}
+
+func UnmarshalUInt8(b *bytes.Buffer) (interface{}, error) {
+	var res uint8
+	err := binary.Read(b, binary.LittleEndian, &res)
+
+	return res, err
+}
+
+func MarshalUInt8(in interface{}, out *bytes.Buffer) error {
+	return binary.Write(out, binary.LittleEndian, in.(uint8))
+}
+
 func UnmarshalInt8(b *bytes.Buffer) (interface{}, error) {
 	var res int8
 	err := binary.Read(b, binary.LittleEndian, &res)
@@ -22,6 +37,17 @@ func UnmarshalInt8(b *bytes.Buffer) (interface{}, error) {
 
 func MarshalInt8(in interface{}, out *bytes.Buffer) error {
 	return binary.Write(out, binary.LittleEndian, in.(int8))
+}
+
+func UnmarshalUInt32(b *bytes.Buffer) (interface{}, error) {
+	var res uint32
+	err := binary.Read(b, binary.LittleEndian, &res)
+
+	return res, err
+}
+
+func MarshalUInt32(in interface{}, out *bytes.Buffer) error {
+	return binary.Write(out, binary.LittleEndian, in.(uint32))
 }
 
 func UnmarshalInt32(b *bytes.Buffer) (interface{}, error) {
