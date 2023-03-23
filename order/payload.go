@@ -34,7 +34,7 @@ type movePayload struct {
 	orderId   int64
 	userId    int64
 	symbolId  int32 // TODO Is it redundant?
-	newPrice  int64
+	toPrice  int64
 	timestamp int64
 	_         struct{}
 }

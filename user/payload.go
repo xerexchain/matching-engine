@@ -2,6 +2,7 @@ package user
 
 import (
 	"bytes"
+
 	"github.com/xerexchain/matching-engine/serialization"
 )
 
@@ -18,7 +19,7 @@ type balanceAdjustmentPayload struct {
 	currency  int32
 	amount    int64
 	txid      int64
-	t         BalanceAdjustmentType
+	t         BalanceAdjType
 	timestamp int64
 	_         struct{}
 }
