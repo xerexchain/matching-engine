@@ -7,13 +7,12 @@ const (
 	Bid
 )
 
-func FromByte(b int8) Action {
-	switch b {
-	case int8(Ask):
-		return Ask
-	case int8(Bid):
-		return Bid
-	default:
-		panic("Undefined action")
-	}
+var codeToAction = map[int8]Action{
+	0: Ask,
+	1: Bid,
+}
+
+func FromCode(b int8) (Action, bool) {
+	val, ok := codeToAction[b]
+	return val, ok
 }

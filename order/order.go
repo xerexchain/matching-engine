@@ -3,6 +3,7 @@ package order
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/xerexchain/matching-engine/order/action"
@@ -184,7 +185,12 @@ func UnMarshal(b *bytes.Buffer) (interface{}, error) {
 	if val, err := serialization.UnmarshalInt8(b); err != nil {
 		return nil, err
 	} else {
-		o.Action_ = action.FromByte(val.(int8))
+		if act, ok := action.FromCode(val.(int8)); !ok {
+			return nil, fmt.Errorf("failed to unmarshal action: %v", val)
+		} else {
+			o.Action_ = act
+		}
+
 	}
 
 	if val, err := serialization.UnmarshalInt64(b); err != nil {
