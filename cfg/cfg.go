@@ -9,7 +9,7 @@ var (
 )
 
 type InitialState interface {
-	IsEmptySnapshot() bool // rename?
+	IsEmptySnapshot() bool
 	SnapshotId() int64
 	PanicIfSnapshotNotFound() bool
 	JournalTimestampNs() int64
@@ -39,26 +39,26 @@ func (f *fastCompressor) Compress(src []byte, dst []byte) (int, error) {
 // note: using LZ4 HIGH will require about twice more time
 // note: using LZ4 HIGH is not recommended because of very high impact on throughput
 type DiskProc struct {
-	StorageFolder      string
-	JournalBuffSize    int32
-	JournalFileMaxSize int64
-	SnapshotCompressor Compressor
-	JournalCompressor  Compressor
+	StorageFolder           string
+	JournalBufSizeBytes     int32
+	JournalFileMaxSizeBytes int64
+	SnapshotCompressor      Compressor
+	JournalCompressor       Compressor
 
-	// use LZ4 compression if batch size (in bytes) exceeds this value for batches threshold
+	// use LZ4 compression if batch size exceeds this value for batches threshold
 	// average batch size depends on traffic and disk write delay and can reach up to 20-100 kilobytes (3M TPS and 0.15ms disk write delay)
 	// under moderate load for single messages compression is never used
-	JournalBatchCompressThreshold int32
-	_                             struct{}
+	JournalBatchCompressThresholdBytes int32
+	_                                  struct{}
 }
 
 func DefaultDiskProc() *DiskProc {
 	return &DiskProc{
-		StorageFolder:                 "./dumps",
-		JournalBuffSize:               256 * 1024,         // 256 KB - TODO calculate based on ringBufferSize
-		JournalFileMaxSize:            4000 * 1024 * 1024, // 4 GB
-		JournalBatchCompressThreshold: 2048,               // 2048 B
-		SnapshotCompressor:            lz4Fast,
-		JournalCompressor:             lz4Fast,
+		StorageFolder:                      "./dumps",
+		JournalBufSizeBytes:                256 * 1024,         // 256 KB - TODO calculate based on ringBufferSize
+		JournalFileMaxSizeBytes:            4000 * 1024 * 1024, // 4 GB
+		JournalBatchCompressThresholdBytes: 2048,               // 2048 B
+		SnapshotCompressor:                 lz4Fast,
+		JournalCompressor:                  lz4Fast,
 	}
 }

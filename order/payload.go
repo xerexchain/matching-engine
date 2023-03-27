@@ -1,6 +1,9 @@
 package order
 
-import "github.com/xerexchain/matching-engine/order/action"
+import (
+	"github.com/xerexchain/matching-engine/order/action"
+	"github.com/xerexchain/matching-engine/order/t"
+)
 
 // TODO EqualsAndHashCode
 // TODO rename or delete
@@ -13,7 +16,7 @@ type placePayload struct {
 	symbolId     int32
 	userCookie   int32
 	action       action.Action
-	t            Type
+	t            t.T
 	timestamp    int64
 	_            struct{}
 }
@@ -34,7 +37,7 @@ type movePayload struct {
 	orderId   int64
 	userId    int64
 	symbolId  int32 // TODO Is it redundant?
-	toPrice  int64
+	toPrice   int64
 	timestamp int64
 	_         struct{}
 }
@@ -42,10 +45,10 @@ type movePayload struct {
 // TODO EqualsAndHashCode
 // TODO rename or delete
 type reducePayload struct {
-	orderId        int64
-	userId         int64
-	symbolId       int32 // TODO Is it redundant?
-	quantity int64
-	timestamp      int64
-	_              struct{}
+	orderId   int64
+	userId    int64
+	symbolId  int32 // TODO Is it redundant?
+	quantity  int64
+	timestamp int64
+	_         struct{}
 }

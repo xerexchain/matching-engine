@@ -1,10 +1,10 @@
-package order
+package t
 
-type Type int8
+type T int8
 
 const (
 	// Good till Cancel - equivalent to regular limit order
-	GTC Type = iota
+	GTC T = iota
 
 	// Immediate or Cancel - equivalent to strict-risk market order
 	IOC       // with price cap
@@ -15,7 +15,7 @@ const (
 	FOCBudget // total amount cap
 )
 
-var codeToType = map[int8]Type{
+var codeToT = map[int8]T{
 	0: GTC,
 	1: IOC,
 	2: IOCBudget,
@@ -23,9 +23,8 @@ var codeToType = map[int8]Type{
 	4: FOCBudget,
 }
 
-// TODO rename
-func FromCode(b int8) (Type, bool) {
-	val, ok := codeToType[b]
+func From(b int8) (T, bool) {
+	val, ok := codeToT[b]
 
 	return val, ok
 }
