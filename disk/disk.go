@@ -21,10 +21,12 @@ type module string // TODO rename? byte or string?
 const (
 	riskEngine           module = "RE"
 	matchingEngineRouter module = "ME"
+	maxOriginalSize      int32  = 1000000
+	maxCompressedSize    int32  = 1000000
 )
 
 // TODO Comparable<SnapshotDescriptor>
-// compareTo
+// TODO compareTo
 type snapshot struct {
 	id                 int64 // 0 means empty snapshot (clean start)
 	seq                int64
@@ -68,7 +70,7 @@ type Processor interface {
 
 // TODO rename?
 type processor struct {
-	cfg                    cfg.DiskProc
+	cfg                    *cfg.DiskProc
 	exchangeId             string // TODO validate // TODO int or uuid
 	folder                 string
 	baseSeq                int64
@@ -160,37 +162,41 @@ func (p *processor) WriteToJournal(
 		return nil
 	}
 
-	// TODO readcommand
-	if command.Code() == cmd.ShutdownSignal {
-		p.flush(false, command.TimestampNs()) // TODO vs cmd.timestamp
+	timestamp := command.Metadata().TimestampNs // TODO vs cmd.timestamp
+	code := command.Code()
+
+	if code == cmd.ShutdownSignal_ {
+		p.flush(false, timestamp)
 
 		return nil
 	}
 
+	// TODO
 	// if (!cmdType.isMutate()) {
 	// 	// skip queries
 	// 	return;
 	// }
 
 	if p.raf == nil {
-		p.newFile(command.TimestampNs()) // TODO vs cmd.timestamp
+		p.newFile(timestamp) // TODO vs cmd.timestamp
 	}
 
 	if err := serialization.MarshalInt8(command.Code(), p.journalBuf); err != nil {
 		return err
 	}
 
-	command.SetSeq(dSeq + p.baseSeq)
+	command.Metadata().Seq = dSeq + p.baseSeq
 	command.Marshal(p.journalBuf)
 
-	if command.Code() == cmd.PersistStateRisk_ {
+	if code == cmd.PersistStateRisk_ {
 		// p.registerNextSnapshot() // TODO
+		// baseSnapshotId = TODO
 		p.fileCounter = 0
-		p.flush(true, command.TimestampNs()) // TODO vs cmd.timestamp
-	} else if command.Code() == cmd.Reset_ {
-		p.flush(true, command.TimestampNs()) // TODO vs cmd.timestamp
+		p.flush(true, timestamp)
+	} else if code == cmd.Reset_ {
+		p.flush(true, timestamp)
 	} else if eob || p.journalBufFlushTrigger <= int32(p.journalBuf.Len()) {
-		p.flush(false, command.TimestampNs()) // TODO vs cmd.timestamp
+		p.flush(false, timestamp)
 	}
 
 	return nil
@@ -232,7 +238,7 @@ func (p *processor) readCommands(
 			return nil, fmt.Errorf("unexpected command: %v", val)
 		}
 
-		if emptyCommand.Code() == cmd.ReservedCompressed {
+		if emptyCommand.Code() == cmd.ReservedCompressed_ {
 			if insideCompressedBlock {
 				return nil, errors.New("recursive compression block (data corrupted)")
 			}
@@ -245,7 +251,7 @@ func (p *processor) readCommands(
 				compSize = val.(int32)
 			}
 
-			if compSize > 1000000 { // TODO make const
+			if compSize > maxCompressedSize {
 				return nil, fmt.Errorf("bad compressed block size = %v (data corrupted)", compSize)
 			}
 
@@ -257,7 +263,7 @@ func (p *processor) readCommands(
 				origSize = val.(int32)
 			}
 
-			if origSize > 1000000 { // TODO make constant
+			if origSize > maxOriginalSize {
 				return nil, fmt.Errorf("bad original block size = %v (data corrupted)", origSize)
 			}
 
@@ -284,12 +290,13 @@ func (p *processor) readCommands(
 		} else {
 			emptyCommand.Unmarshal(buf)
 			command := emptyCommand
+			seq := command.Metadata().Seq
 
-			if command.Seq() != *lastSeq+1 {
-				log.Printf("warn: Sequence gap %v->%v (%v)", lastSeq, command.Seq(), command.Seq()-*lastSeq)
+			if seq != *lastSeq+1 {
+				log.Printf("warn: Sequence gap %v->%v (%v)", lastSeq, seq, seq-*lastSeq)
 			}
 
-			*lastSeq = command.Seq()
+			*lastSeq = seq
 
 			res = append(res, command)
 		}
@@ -304,7 +311,7 @@ func (p *processor) flush(
 ) error {
 	length := int32(p.journalBuf.Len())
 
-	if length < p.cfg.JournalBatchCompressThreshold {
+	if length < p.cfg.JournalBatchCompressThresholdBytes {
 		if _, err := p.raf.Write(p.journalBuf.Bytes()); err != nil {
 			// TODO reset journalBuf?
 			return err
@@ -316,7 +323,7 @@ func (p *processor) flush(
 		p.lz4Buf.Reset()
 
 		// indicates compressed block
-		if err := serialization.MarshalInt8(cmd.ReservedCompressed, p.lz4Buf); err != nil {
+		if err := serialization.MarshalInt8(cmd.ReservedCompressed_, p.lz4Buf); err != nil {
 			return err
 		}
 
@@ -339,12 +346,14 @@ func (p *processor) flush(
 			// TODO reset journalBuf?
 			return err
 		}
+
 		if n == 0 {
 			// TODO reset journalBuf?
 			return errors.New("incompressible")
 		}
 
-		view := bytes.NewBuffer(p.lz4Buf.Bytes()[1:])
+		view := bytes.NewBuffer(p.lz4Buf.Bytes()[1:1])
+
 		if err := serialization.MarshalInt32(int32(n), view); err != nil {
 			return err
 		}
@@ -361,7 +370,7 @@ func (p *processor) flush(
 
 	p.journalBuf.Reset()
 
-	if forceStartNextFile || p.cfg.JournalFileMaxSize <= p.writtenBytes {
+	if forceStartNextFile || p.cfg.JournalFileMaxSizeBytes <= p.writtenBytes {
 		// TODO start preparing new file asynchronously, but ONLY ONCE
 		p.newFile(timestampNs)
 		p.writtenBytes = 0

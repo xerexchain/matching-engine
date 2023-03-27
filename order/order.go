@@ -185,7 +185,7 @@ func UnMarshal(b *bytes.Buffer) (interface{}, error) {
 	if val, err := serialization.UnmarshalInt8(b); err != nil {
 		return nil, err
 	} else {
-		if act, ok := action.FromCode(val.(int8)); !ok {
+		if act, ok := action.From(val.(int8)); !ok {
 			return nil, fmt.Errorf("failed to unmarshal action: %v", val)
 		} else {
 			o.Action_ = act

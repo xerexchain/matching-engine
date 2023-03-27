@@ -15,7 +15,7 @@ type Symbol interface {
 }
 
 // TODO equals overriden
-type FutureContractSymbol interface {
+type FutureContract interface {
 	Symbol
 	MarginBuy() int64
 	MarginSell() int64
@@ -25,7 +25,7 @@ type FutureContractSymbol interface {
 // TODO This is incompatible with exchange-core: `bytes.writeByte(type.getCode());`
 // TODO equals overriden
 // TODO complete implementation
-type OptionSymbol interface {
+type Option interface {
 	Symbol
 }
 
@@ -42,14 +42,14 @@ type symbol struct {
 	_         struct{}
 }
 
-type futureContractSymbol struct {
+type futureContract struct {
 	Symbol_     symbol
 	MarginBuy_  int64 // quote currency
 	MarginSell_ int64 // quote currency
 	_           struct{}
 }
 
-type optionSymbol struct {
+type option struct {
 	Symbol_ symbol
 	_       struct{}
 }
@@ -68,15 +68,15 @@ func (s *symbol) Marshal(out *bytes.Buffer) error {
 	return MarshalSymbol(s, out)
 }
 
-func (f *futureContractSymbol) MarginBuy() int64 {
+func (f *futureContract) MarginBuy() int64 {
 	return f.MarginBuy_
 }
 
-func (f *futureContractSymbol) MarginSell() int64 {
+func (f *futureContract) MarginSell() int64 {
 	return f.MarginSell_
 }
 
-func (f *futureContractSymbol) Hash() uint64 {
+func (f *futureContract) Hash() uint64 {
 	hash, err := hashstructure.Hash(*f, hashstructure.FormatV2, nil)
 
 	if err != nil {
@@ -86,8 +86,8 @@ func (f *futureContractSymbol) Hash() uint64 {
 	return hash
 }
 
-func (f *futureContractSymbol) Marshal(out *bytes.Buffer) error {
-	return MarshalFutureContractSymbol(f, out)
+func (f *futureContract) Marshal(out *bytes.Buffer) error {
+	return MarshalFutureContract(f, out)
 }
 
 // TODO This is incompatible with exchange-core: `bytes.writeByte(type.getCode());`
@@ -174,8 +174,8 @@ func UnmarshalSymbol(b *bytes.Buffer) (interface{}, error) {
 	return &s, nil
 }
 
-func MarshalFutureContractSymbol(in interface{}, out *bytes.Buffer) error {
-	f := in.(*futureContractSymbol)
+func MarshalFutureContract(in interface{}, out *bytes.Buffer) error {
+	f := in.(*futureContract)
 
 	if err := MarshalSymbol(&(f.Symbol_), out); err != nil {
 		return err
@@ -192,8 +192,8 @@ func MarshalFutureContractSymbol(in interface{}, out *bytes.Buffer) error {
 	return nil
 }
 
-func UnmarshalFutureContractSymbol(b *bytes.Buffer) (interface{}, error) {
-	f := futureContractSymbol{}
+func UnmarshalFutureContract(b *bytes.Buffer) (interface{}, error) {
+	f := futureContract{}
 
 	if val, err := UnmarshalSymbol(b); err != nil {
 		return nil, err

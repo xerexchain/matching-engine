@@ -4,6 +4,7 @@ import (
 	"bytes"
 
 	"github.com/xerexchain/matching-engine/serialization"
+	"github.com/xerexchain/matching-engine/user/balance/adjustment/t"
 )
 
 // TODO EqualsAndHashCode
@@ -19,7 +20,7 @@ type balanceAdjustmentPayload struct {
 	currency  int32
 	amount    int64
 	txid      int64
-	t         BalanceAdjType
+	t         t.T
 	timestamp int64
 	_         struct{}
 }

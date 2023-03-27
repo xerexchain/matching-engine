@@ -12,7 +12,8 @@ var codeToAction = map[int8]Action{
 	1: Bid,
 }
 
-func FromCode(b int8) (Action, bool) {
+func From(b int8) (Action, bool) {
 	val, ok := codeToAction[b]
+
 	return val, ok
 }

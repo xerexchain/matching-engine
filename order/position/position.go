@@ -7,28 +7,12 @@ import (
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/xerexchain/matching-engine/math"
 	"github.com/xerexchain/matching-engine/order/action"
+	"github.com/xerexchain/matching-engine/order/direction"
 	riskengine "github.com/xerexchain/matching-engine/process/risk_engine"
 	"github.com/xerexchain/matching-engine/serialization"
 	"github.com/xerexchain/matching-engine/state"
 	"github.com/xerexchain/matching-engine/symbol"
 )
-
-var (
-	Long = Direction{
-		Multiplier: 1,
-	}
-	Short = Direction{
-		Multiplier: -1,
-	}
-	Empty = Direction{
-		Multiplier: 0,
-	}
-)
-
-type Direction struct {
-	Multiplier int8
-	_          struct{}
-}
 
 type Margin interface {
 	state.Hashable
@@ -38,14 +22,14 @@ type Margin interface {
 	PendingHold(action.Action, int64)
 	PendingRelease(action.Action, int64)
 	EstimateProfit(
-		symbol.FutureContractSymbol,
+		symbol.FutureContract,
 		riskengine.LastPriceCacheRecord,
 	) int64
 	CalculateRequiredMarginForFutures(
-		symbol.FutureContractSymbol,
+		symbol.FutureContract,
 	) int64
 	CalculateRequiredMarginForOrder(
-		symbol.FutureContractSymbol,
+		symbol.FutureContract,
 		action.Action,
 		int64,
 	) int64
@@ -65,7 +49,7 @@ type margin struct {
 	OpenQuantity int64 // TODO doc
 	OpenPriceSum int64 // TODO doc // TODO break to openPrice and OpenSum
 	Profit       int64 // TODO doc
-	Direction
+	direction.Direction
 
 	// pending orders total quantity
 	// increment before sending order to matching engine
@@ -75,42 +59,15 @@ type margin struct {
 	_                   struct{}
 }
 
-func (d Direction) IsOppositeTo(act action.Action) bool {
-	return (d == Long && act == action.Ask) || (d == Short && act == action.Bid)
-}
-
-func (d Direction) IsSameAs(act action.Action) bool {
-	return (d == Long && act == action.Bid) || (d == Short && act == action.Ask)
-}
-
-func DirectionFromAction(act action.Action) Direction {
-	if act == action.Bid {
-		return Long
-	} else {
-		return Short
-	}
-}
-
-func DirectionFromByte(b int8) Direction {
-	switch b {
-	case Long.Multiplier:
-		return Long
-	case Short.Multiplier:
-		return Short
-	case Empty.Multiplier:
-		return Empty
-	default:
-		panic("Undefined direction")
-	}
-}
-
 func (m *margin) SetUserId(id int64) {
 	m.UserId = id
 }
 
 // Check if position is empty (no pending orders, no open trades) - can remove it from hashmap
 func (m *margin) IsEmpty() bool {
-	return m.Direction == Empty && m.PendingSellQuantity == 0 && m.PendingBuyQuantity == 0
+	return m.Direction == direction.Empty &&
+		m.PendingSellQuantity == 0 &&
+		m.PendingBuyQuantity == 0
 }
 
 func (m *margin) PendingHold(act action.Action, quantity int64) {
@@ -135,13 +92,13 @@ func (m *margin) PendingRelease(act action.Action, quantity int64) {
 
 // TODO relation of sym and symbolId
 func (m *margin) EstimateProfit(
-	sym symbol.FutureContractSymbol,
+	sym symbol.FutureContract,
 	rec riskengine.LastPriceCacheRecord,
 ) int64 {
 	switch m.Direction {
-	case Empty:
+	case direction.Empty:
 		return m.Profit
-	case Long:
+	case direction.Long:
 		{
 			p := m.Profit
 
@@ -154,7 +111,7 @@ func (m *margin) EstimateProfit(
 
 			return p
 		}
-	case Short:
+	case direction.Short:
 		{
 			p := m.Profit
 
@@ -172,8 +129,9 @@ func (m *margin) EstimateProfit(
 	}
 }
 
+// TODO rename
 func (m *margin) M(
-	sym symbol.FutureContractSymbol,
+	sym symbol.FutureContract,
 ) (int64, int64) {
 	signedPosition := m.OpenQuantity * int64(m.Direction.Multiplier)
 	currRiskBuyQuantity := m.PendingBuyQuantity + signedPosition
@@ -186,7 +144,7 @@ func (m *margin) M(
 }
 
 func (m *margin) CalculateRequiredMarginForFutures(
-	sym symbol.FutureContractSymbol,
+	sym symbol.FutureContract,
 ) int64 {
 	marginBuy, MarginSell := m.M(sym)
 
@@ -197,7 +155,7 @@ func (m *margin) CalculateRequiredMarginForFutures(
 // return -1 if order will reduce current exposure (no additional margin required),
 // otherwise full margin for symbol position if order placed/executed
 func (m *margin) CalculateRequiredMarginForOrder(
-	sym symbol.FutureContractSymbol,
+	sym symbol.FutureContract,
 	act action.Action,
 	quantity int64,
 ) int64 {
@@ -245,7 +203,7 @@ func (m *margin) CloseCurrPositionFutures(
 	tradeQuantity int64,
 	price int64,
 ) int64 {
-	if m.Direction == Empty || m.Direction == DirectionFromAction(act) {
+	if m.Direction == direction.Empty || m.Direction == direction.FromAction(act) {
 		// nothing to close
 		return tradeQuantity
 	}
@@ -260,7 +218,7 @@ func (m *margin) CloseCurrPositionFutures(
 	// current position smaller than trade quantity, can close completely and calculate profit
 	m.Profit += (m.OpenQuantity*price - m.OpenPriceSum) * int64(m.Direction.Multiplier)
 	m.OpenPriceSum = 0
-	m.Direction = Empty
+	m.Direction = direction.Empty
 	quantityToOpen := tradeQuantity - m.OpenQuantity
 	m.OpenQuantity = 0
 
@@ -276,7 +234,7 @@ func (m *margin) OpenPositionMargin(
 ) {
 	m.OpenQuantity += quantityToOpen
 	m.OpenPriceSum += quantityToOpen * price
-	m.Direction = DirectionFromAction(act)
+	m.Direction = direction.FromAction(act)
 
 	m.ValidateInternalState() // TODO comment or not?
 }
@@ -286,11 +244,11 @@ func (m *margin) Reset() {
 	m.PendingSellQuantity = 0
 	m.OpenQuantity = 0
 	m.OpenPriceSum = 0
-	m.Direction = Empty
+	m.Direction = direction.Empty
 }
 
 func (m *margin) ValidateInternalState() {
-	if m.Direction == Empty && (m.OpenQuantity != 0 || m.OpenPriceSum != 0) {
+	if m.Direction == direction.Empty && (m.OpenQuantity != 0 || m.OpenPriceSum != 0) {
 		log.Panicf(
 			"Error: userId %v : position:%v totalQuantity:%v openPriceSum:%v",
 			m.UserId,
@@ -300,7 +258,7 @@ func (m *margin) ValidateInternalState() {
 		)
 	}
 
-	if m.Direction == Empty && (m.OpenQuantity <= 0 || m.OpenPriceSum <= 0) {
+	if m.Direction == direction.Empty && (m.OpenQuantity <= 0 || m.OpenPriceSum <= 0) {
 		log.Panicf(
 			"Error: userId %v : position:%v totalQuantity:%v openPriceSum:%v",
 			m.UserId,
@@ -401,7 +359,7 @@ func UnmarshalMargin(b *bytes.Buffer) (interface{}, error) {
 	if val, err := serialization.UnmarshalInt8(b); err != nil {
 		return nil, err
 	} else {
-		m.Direction = DirectionFromByte(val.(int8))
+		m.Direction = direction.FromByte(val.(int8))
 	}
 
 	if val, err := serialization.UnmarshalInt64(b); err != nil {
@@ -474,6 +432,6 @@ func NewMargin(
 		UserId:    userId,
 		SymbolId:  symbolId,
 		Currency:  currency,
-		Direction: Empty,
+		Direction: direction.Empty,
 	}
 }
