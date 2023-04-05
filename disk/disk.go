@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 
 	"github.com/emirpasic/gods/maps/treemap"
 	"github.com/pierrec/lz4/v4"
@@ -23,6 +24,7 @@ const (
 	matchingEngineRouter module = "ME"
 	maxOriginalSize      int32  = 1000000
 	maxCompressedSize    int32  = 1000000
+	maxCommandSizeBytes  int32  = 256
 )
 
 // TODO Comparable<SnapshotDescriptor>
@@ -64,28 +66,26 @@ type Processor interface {
 	EnableJournalingAfter(int64)
 
 	// sequential map of snapshots, int64 -> *Snapshot
-	Snapshots() *treemap.Map
+	// Snapshots() *treemap.Map
 	SnapshotExists(int64, module, int32) bool
 }
 
 // TODO rename?
 type processor struct {
-	cfg                    *cfg.DiskProc
-	exchangeId             string // TODO validate // TODO int or uuid
-	folder                 string
-	baseSeq                int64
-	baseSnapshotId         int64
+	diskCfg                *cfg.DiskProc
+	initialStateCfg        *cfg.InitialState
 	enableJournalAfterSeq  int64 // TODO default -1
 	journalBufFlushTrigger int32
 	journalBuf             *bytes.Buffer
 	lz4Buf                 *bytes.Buffer
-	snapshotIndex          *treemap.Map // TODO ConcurrentSkipListMap
-	lastSnapshot           *snapshot
-	lastJournal            *journal
-	raf                    *os.File // TODO RandomAccessFile, FileChannel // TODO rename
-	fileCounter            int64
-	writtenBytes           int64
-	_                      struct{}
+	// snapshotIndex          *treemap.Map // TODO ConcurrentSkipListMap // TODO default val
+	lastSnapshot *snapshot
+	lastJournal  *journal
+	raf          *os.File // TODO RandomAccessFile, FileChannel // TODO rename
+	fileCounter  int64
+	writtenBytes int64
+	mu           sync.RWMutex
+	_            struct{}
 }
 
 func snapshotComparator(a, b interface{}) int {
@@ -104,23 +104,23 @@ func snapshotComparator(a, b interface{}) int {
 
 func canLoadFromSnapshot(
 	p Processor,
-	conf cfg.InitialState,
+	cfg cfg.InitialState,
 	shardId int32,
 	mod module,
 ) bool {
-	if conf.IsEmptySnapshot() {
+	if cfg.BaseSnapshotId != 0 {
 		if p.SnapshotExists(
-			conf.SnapshotId(),
+			cfg.BaseSnapshotId,
 			mod,
 			shardId,
 		) {
 			return true
 		}
 
-		if conf.PanicIfSnapshotNotFound() {
+		if cfg.PanicIfSnapshotNotFound {
 			panic(
 				fmt.Sprintf(
-					"Snapshot %v sharedId %v not found for %v", conf.SnapshotId(), shardId, mod,
+					"Snapshot %v sharedId %v not found for %v", cfg.BaseSnapshotId, shardId, mod,
 				),
 			)
 		}
@@ -152,13 +152,67 @@ func newSnapshot(
 	}
 }
 
+func (p *processor) Store(
+	snapshotId int64,
+	seq int64,
+	timestampNs int64,
+	mod module,
+	instanceId int32,
+	marshalable serialization.Marshalable,
+) bool {
+	p.mu.Lock()
+
+	path := p.snapshotPath(snapshotId, mod, instanceId)
+	f, err := os.Create(path)
+
+	if err != nil {
+		log.Printf("error: can not write snapshot file: %v", err)
+		p.mu.Unlock()
+
+		return false
+	}
+
+	defer f.Close()
+
+	// TODO impl
+
+	p.mu.Unlock()
+
+	return true
+}
+
+func (p *processor) Load(
+	snapshotId int64,
+	mod module,
+	instanceId int32,
+	init func(*bytes.Buffer) interface{},
+) interface{} {
+	p.mu.Lock()
+
+	path := p.snapshotPath(snapshotId, mod, instanceId)
+	f, err := os.Open(path)
+
+	if err != nil {
+		p.mu.Unlock()
+		log.Panicf("can not read snapshot file: %v", err)
+	}
+
+	defer f.Close()
+
+	// TODO impl
+
+	p.mu.Unlock()
+
+	return nil
+}
+
 // TODO thread safe?
 func (p *processor) WriteToJournal(
 	command cmd.Command,
 	dSeq int64, // distruptor sequence // TODO rename to seq?
 	eob bool, // TODO rename
 ) error {
-	if p.enableJournalAfterSeq == -1 || dSeq+p.baseSeq <= p.enableJournalAfterSeq {
+	if p.enableJournalAfterSeq == -1 || dSeq+p.initialStateCfg.BaseSnapshotSeq <= p.enableJournalAfterSeq {
 		return nil
 	}
 
@@ -185,7 +239,7 @@ func (p *processor) WriteToJournal(
 		return err
 	}
 
-	command.Metadata().Seq = dSeq + p.baseSeq
+	command.Metadata().Seq = dSeq + p.initialStateCfg.BaseSnapshotSeq
 	command.Marshal(p.journalBuf)
 
 	if code == cmd.PersistStateRisk_ {
@@ -206,9 +260,9 @@ func (p *processor) EnableJournalingAfter(seq int64) {
 	p.enableJournalAfterSeq = seq
 }
 
-func (p *processor) Snapshots() *treemap.Map {
-	return p.snapshotIndex
-}
+// func (p *processor) Snapshots() *treemap.Map {
+// 	return p.snapshotIndex
+// }
 
 func (p *processor) SnapshotExists(
 	snapshotId int64,
@@ -311,7 +365,7 @@ func (p *processor) flush(
 ) error {
 	length := int32(p.journalBuf.Len())
 
-	if length < p.cfg.JournalBatchCompressThresholdBytes {
+	if length < p.diskCfg.JournalBatchCompressThresholdBytes {
 		if _, err := p.raf.Write(p.journalBuf.Bytes()); err != nil {
 			// TODO reset journalBuf?
 			return err
@@ -337,7 +391,7 @@ func (p *processor) flush(
 			return err
 		}
 
-		n, err := p.cfg.JournalCompressor.Compress(
+		n, err := p.diskCfg.JournalCompressor.Compress(
 			p.journalBuf.Bytes(),
 			p.lz4Buf.Bytes()[prefixLen:],
 		)
@@ -370,7 +424,7 @@ func (p *processor) flush(
 
 	p.journalBuf.Reset()
 
-	if forceStartNextFile || p.cfg.JournalFileMaxSizeBytes <= p.writtenBytes {
+	if forceStartNextFile || p.diskCfg.JournalFileMaxSizeBytes <= p.writtenBytes {
 		// TODO start preparing new file asynchronously, but ONLY ONCE
 		p.newFile(timestampNs)
 		p.writtenBytes = 0
@@ -386,7 +440,7 @@ func (p *processor) newFile(timestampNs int64) error {
 		p.raf.Close()
 	}
 
-	path := p.journalPath(p.fileCounter, p.baseSnapshotId)
+	path := p.journalPath(p.fileCounter, p.initialStateCfg.BaseSnapshotId)
 
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		if f, err := os.OpenFile(
@@ -395,7 +449,7 @@ func (p *processor) newFile(timestampNs int64) error {
 			0644, // TODO equals to rwd?
 		); err == nil {
 			p.raf = f
-			p.registerNextJournal(p.baseSnapshotId, timestampNs) // TODO fix time
+			p.registerNextJournal(p.initialStateCfg.BaseSnapshotId, timestampNs) // TODO fix time
 
 			return nil
 		}
@@ -434,8 +488,8 @@ func (p *processor) registerNextSnapshot(
 func (p *processor) mainLogPath() string {
 	return fmt.Sprintf(
 		"%s/%s.eca",
-		p.folder,
-		p.exchangeId,
+		p.diskCfg.StorageFolder,
+		p.initialStateCfg.ExchangeId,
 	)
 }
 
@@ -446,8 +500,8 @@ func (p *processor) snapshotPath(
 ) string {
 	return fmt.Sprintf(
 		"%s/%s_snapshot_%d_%s%d.ecs",
-		p.folder,
-		p.exchangeId,
+		p.diskCfg.StorageFolder,
+		p.initialStateCfg.ExchangeId,
 		snapshotId,
 		mod,
 		instanceId,
@@ -459,9 +513,32 @@ func (p *processor) journalPath(
 ) string {
 	return fmt.Sprintf(
 		"%s/%s_journal_%d_%04X.ecj",
-		p.folder,
-		p.exchangeId,
+		p.diskCfg.StorageFolder,
+		p.initialStateCfg.ExchangeId,
 		snapshotId,
 		partitionId,
 	)
+}
+
+func NewProcessor(
+	diskCfg *cfg.DiskProc,
+	initialStateCfg *cfg.InitialState,
+	performanceCfg *cfg.Performance,
+
+) Processor {
+	// TODO journalFileMaxSize
+
+	return &processor{
+		diskCfg:                diskCfg,
+		initialStateCfg:        initialStateCfg,
+		enableJournalAfterSeq:  -1,
+		journalBufFlushTrigger: diskCfg.JournalBufSizeBytes - maxCommandSizeBytes,
+		journalBuf:             bytes.NewBuffer(make([]byte, 0, diskCfg.JournalBufSizeBytes)),
+		lz4Buf:                 bytes.NewBuffer(make([]byte, 0, diskCfg.JournalBufSizeBytes)), // TODO size
+		// snapshotIndex: treemap.NewWith(),
+		lastSnapshot: &snapshot{
+			numRiskEngines:     performanceCfg.NumRiskEngines,
+			numMatchingEngines: performanceCfg.NumMatchingEngines,
+		},
+	}
 }
