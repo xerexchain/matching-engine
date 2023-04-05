@@ -489,7 +489,7 @@ func (n *naive) BidOrders() []interface{} {
 	return res
 }
 
-func (n *naive) FillAsks(size int32, data L2MarketData) {
+func (n *naive) FillAsks(size int32, data *L2MarketData) {
 	if size > data.AskSize() {
 		size = data.AskSize()
 	}
@@ -513,7 +513,7 @@ func (n *naive) FillAsks(size int32, data L2MarketData) {
 	data.LimitAskViewTo(size)
 }
 
-func (n *naive) FillBids(size int32, data L2MarketData) {
+func (n *naive) FillBids(size int32, data *L2MarketData) {
 	if size > data.BidSize() {
 		size = data.BidSize()
 	}
@@ -666,4 +666,13 @@ func L2MarketDataSnapshot(orderbook OrderBook, limit int32) *L2MarketData {
 func PublishL2MarketDataSnapshot(orderbook OrderBook, data *L2MarketData) {
 	orderbook.FillAsks(L2Size, data)
 	orderbook.FillBids(L2Size, data)
+}
+
+func NewNaive(sym symbol.Symbol) OrderBook {
+	return &naive{
+		askBuckets: btree.New(4), // TODO adjust 4
+		bidBuckets: btree.New(4), // TODO adjust 4
+		symbol:     sym,
+		orders:     make(map[int64]order.Order),
+	}
 }
