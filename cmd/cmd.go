@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/xerexchain/matching-engine/order/action"
+	"github.com/xerexchain/matching-engine/order"
 	orderType "github.com/xerexchain/matching-engine/order/t"
 	"github.com/xerexchain/matching-engine/serialization"
 	"github.com/xerexchain/matching-engine/symbol"
@@ -81,7 +81,7 @@ type PlaceOrder struct {
 	SymbolId      int32
 	UserCookie    int32
 	Timestamp     int64 // TODO make sure filled everywhere
-	action.Action
+	order.Action
 	orderType.T
 	Metadata
 	_ struct{}
@@ -261,7 +261,7 @@ func (c *PlaceOrder) Unmarshal(in *bytes.Buffer) error {
 
 	actAndType := val.(int8)
 	code := actAndType & 0b1
-	act, ok := action.From(code)
+	action, ok := order.ActionFrom(code)
 
 	if !ok {
 		return fmt.Errorf("failed to unmarshal action: %v", code)
@@ -281,7 +281,7 @@ func (c *PlaceOrder) Unmarshal(in *bytes.Buffer) error {
 	c.ReservedPrice = reservedBidPrice.(int64)
 	c.SymbolId = symbolId
 	c.UserCookie = userCookie.(int32)
-	c.Action = act
+	c.Action = action
 	c.T = t
 
 	return nil

@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-
-	"github.com/xerexchain/matching-engine/order/action"
 	"github.com/xerexchain/matching-engine/serialization"
 )
 
@@ -38,9 +36,9 @@ type Order struct {
 
 	// new orders - reserved price for fast moves of `GTC` bid orders in exchange mode
 	// TODO logic
-	reservedBidPrice int64         `json:"reservedBidPrice"`
-	timestamp        int64         `json:"timestamp"`
-	action           action.Action `json:"action"`
+	reservedBidPrice int64  `json:"reservedBidPrice"`
+	timestamp        int64  `json:"timestamp"`
+	action           Action `json:"action"`
 	_                struct{}
 }
 
@@ -52,7 +50,7 @@ func New(
 	filled int64,
 	reservedBidPrice int64,
 	timestamp int64,
-	action action.Action,
+	action Action,
 ) *Order {
 	return &Order{
 		id:               id,
@@ -86,7 +84,7 @@ func (o *Order) Timestamp() int64 {
 	return o.timestamp
 }
 
-func (o *Order) Action() action.Action {
+func (o *Order) Action() Action {
 	return o.action
 }
 
@@ -192,16 +190,16 @@ func (o *Order) Unmarshal(in *bytes.Buffer) error {
 		return err
 	}
 
-	val, err := serialization.ReadInt8(in)
+	code, err := serialization.ReadInt8(in)
 
 	if err != nil {
 		return err
 	}
 
-	act, ok := action.From(val)
+	action, ok := ActionFrom(code)
 
 	if !ok {
-		return fmt.Errorf("unmarshal: invalid action: %v", val)
+		return fmt.Errorf("unmarshal: invalid action: %v", code)
 	}
 
 	userID, err := serialization.ReadInt64(in)
@@ -221,7 +219,7 @@ func (o *Order) Unmarshal(in *bytes.Buffer) error {
 	o.quantity = quantity
 	o.filled = filled
 	o.reservedBidPrice = reservedBidPrice
-	o.action = act
+	o.action = action
 	o.userID = userID
 	o.timestamp = timestamp
 

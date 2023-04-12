@@ -8,7 +8,6 @@ import (
 	"github.com/google/btree"
 	"github.com/xerexchain/matching-engine/cmd"
 	"github.com/xerexchain/matching-engine/order"
-	"github.com/xerexchain/matching-engine/order/action"
 	"github.com/xerexchain/matching-engine/order/t"
 	"github.com/xerexchain/matching-engine/orderbook/event"
 	"github.com/xerexchain/matching-engine/orderbook/orderbucket"
@@ -70,9 +69,9 @@ type naive struct {
 }
 
 func (n *naive) sameBucketsAs(
-	act action.Action,
+	action order.Action,
 ) *btree.BTree {
-	if act == action.Ask {
+	if action == order.Ask {
 		return n.askBuckets
 	} else {
 		return n.bidBuckets
@@ -80,9 +79,9 @@ func (n *naive) sameBucketsAs(
 }
 
 func (n *naive) oppositeBucketsTo(
-	act action.Action,
+	action order.Action,
 ) *btree.BTree {
-	if act == action.Ask {
+	if action == order.Ask {
 		return n.bidBuckets
 	} else {
 		return n.askBuckets
@@ -116,7 +115,7 @@ func (n *naive) findBucket(
 
 func (n *naive) budgetToFill(
 	toCollect int64,
-	act action.Action,
+	action order.Action,
 ) (int64, int64) {
 	collected := int64(0)
 	budget := int64(0)
@@ -141,7 +140,7 @@ func (n *naive) budgetToFill(
 		return true
 	}
 
-	if act == action.Ask {
+	if action == order.Ask {
 		n.bidBuckets.Descend(f)
 	} else {
 		n.askBuckets.Ascend(f)
@@ -189,7 +188,7 @@ func (n *naive) tryMatchInstantly(
 		return true
 	}
 
-	if command.Action == action.Ask {
+	if command.Action == order.Ask {
 		n.bidBuckets.AscendGreaterOrEqual(pivot, f)
 	} else {
 		n.askBuckets.DescendLessOrEqual(pivot, f)
@@ -299,8 +298,8 @@ func (n *naive) PlaceFOKBudget(
 
 	// TODO logic
 	if collected == fok.Quantity || ((fok.Price == budget) ||
-		((fok.Action == action.Ask) && (budget <= fok.Price)) ||
-		((fok.Action == action.Bid) && (budget > fok.Price))) {
+		((fok.Action == order.Ask) && (budget <= fok.Price)) ||
+		((fok.Action == order.Bid) && (budget > fok.Price))) {
 		return n.tryMatchInstantly(fok)
 	} else {
 		e := event.NewReject(
@@ -340,7 +339,7 @@ func (n *naive) Move(
 
 	// reserved price risk check for exchange bids
 	// TODO symbolSpec.type == SymbolType.CURRENCY_EXCHANGE_PAIR
-	if ord.Action() == action.Bid && toPrice > ord.ReservedBidPrice() {
+	if ord.Action() == order.Bid && toPrice > ord.ReservedBidPrice() {
 		return &MatcherResult{
 			ResultCode: resultcode.MatchingMoveFailedPriceOverRiskLimit,
 		}

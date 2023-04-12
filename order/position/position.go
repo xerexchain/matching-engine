@@ -6,7 +6,7 @@ import (
 
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/xerexchain/matching-engine/math"
-	"github.com/xerexchain/matching-engine/order/action"
+	"github.com/xerexchain/matching-engine/order"
 	"github.com/xerexchain/matching-engine/order/direction"
 	riskengine "github.com/xerexchain/matching-engine/processor/risk_engine"
 	"github.com/xerexchain/matching-engine/serialization"
@@ -19,8 +19,8 @@ type Margin interface {
 	serialization.Marshalable
 	SetUserId(int64)
 	IsEmpty() bool
-	PendingHold(action.Action, int64)
-	PendingRelease(action.Action, int64)
+	PendingHold(order.Action, int64)
+	PendingRelease(order.Action, int64)
 	EstimateProfit(
 		symbol.FutureContract,
 		riskengine.LastPriceCacheRecord,
@@ -30,11 +30,11 @@ type Margin interface {
 	) int64
 	CalculateRequiredMarginForOrder(
 		symbol.FutureContract,
-		action.Action,
+		order.Action,
 		int64,
 	) int64
 	UpdateForMarginTrade(
-		action.Action,
+		order.Action,
 		int64,
 		int64,
 	) int64
@@ -70,8 +70,8 @@ func (m *margin) IsEmpty() bool {
 		m.PendingBuyQuantity == 0
 }
 
-func (m *margin) PendingHold(act action.Action, quantity int64) {
-	if act == action.Ask {
+func (m *margin) PendingHold(action order.Action, quantity int64) {
+	if action == order.Ask {
 		m.PendingSellQuantity += quantity
 	} else {
 		m.PendingBuyQuantity += quantity
@@ -80,8 +80,8 @@ func (m *margin) PendingHold(act action.Action, quantity int64) {
 	// TODO handle overflow
 }
 
-func (m *margin) PendingRelease(act action.Action, quantity int64) {
-	if act == action.Ask {
+func (m *margin) PendingRelease(action order.Action, quantity int64) {
+	if action == order.Ask {
 		m.PendingSellQuantity -= quantity
 	} else {
 		m.PendingBuyQuantity -= quantity
@@ -156,13 +156,13 @@ func (m *margin) CalculateRequiredMarginForFutures(
 // otherwise full margin for symbol position if order placed/executed
 func (m *margin) CalculateRequiredMarginForOrder(
 	sym symbol.FutureContract,
-	act action.Action,
+	action order.Action,
 	quantity int64,
 ) int64 {
 	marginBuy, marginSell := m.M(sym)
 	currMargin := math.Max(marginBuy, marginSell)
 
-	if act == action.Bid {
+	if action == order.Bid {
 		marginBuy += sym.MarginBuy() * quantity
 	} else {
 		marginSell += sym.MarginSell() * quantity
@@ -180,30 +180,30 @@ func (m *margin) CalculateRequiredMarginForOrder(
 // Update position for one user
 // return opened quantity
 func (m *margin) UpdateForMarginTrade(
-	act action.Action,
+	action order.Action,
 	quantity int64,
 	price int64,
 ) int64 {
 	// 1. Un-hold pending quantity
-	m.PendingRelease(act, quantity)
+	m.PendingRelease(action, quantity)
 
 	// 2. Reduce opposite position accordingly (if exists)
-	quantityToOpen := m.CloseCurrPositionFutures(act, quantity, price)
+	quantityToOpen := m.CloseCurrPositionFutures(action, quantity, price)
 
 	// 3. Increase forward position accordingly (if quantity left in the trading event)
 	if quantityToOpen > 0 {
-		m.OpenPositionMargin(act, quantityToOpen, price)
+		m.OpenPositionMargin(action, quantityToOpen, price)
 	}
 
 	return quantityToOpen
 }
 
 func (m *margin) CloseCurrPositionFutures(
-	act action.Action,
+	action order.Action,
 	tradeQuantity int64,
 	price int64,
 ) int64 {
-	if m.Direction == direction.Empty || m.Direction == direction.FromAction(act) {
+	if m.Direction == direction.Empty || m.Direction == direction.FromAction(action) {
 		// nothing to close
 		return tradeQuantity
 	}
@@ -228,13 +228,13 @@ func (m *margin) CloseCurrPositionFutures(
 }
 
 func (m *margin) OpenPositionMargin(
-	act action.Action,
+	action order.Action,
 	quantityToOpen int64,
 	price int64,
 ) {
 	m.OpenQuantity += quantityToOpen
 	m.OpenPriceSum += quantityToOpen * price
-	m.Direction = direction.FromAction(act)
+	m.Direction = direction.FromAction(action)
 
 	m.ValidateInternalState() // TODO comment or not?
 }

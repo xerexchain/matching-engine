@@ -8,7 +8,6 @@ import (
 	"github.com/google/btree"
 	"github.com/xerexchain/matching-engine/math"
 	"github.com/xerexchain/matching-engine/order"
-	"github.com/xerexchain/matching-engine/order/action"
 	"github.com/xerexchain/matching-engine/orderbook/event"
 	"github.com/xerexchain/matching-engine/serialization"
 )
@@ -150,7 +149,7 @@ func (n *naive) Match(
 			removedOrders = append(removedOrders, ord.ID())
 		}
 
-		if ord.Action() == action.Ask {
+		if ord.Action() == order.Ask {
 			bidderHoldPrice = reservedBidPrice
 		} else {
 			bidderHoldPrice = ord.ReservedBidPrice()

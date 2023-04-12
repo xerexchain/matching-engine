@@ -1,6 +1,6 @@
 package direction
 
-import "github.com/xerexchain/matching-engine/order/action"
+import "github.com/xerexchain/matching-engine/order"
 
 type Direction struct {
 	Multiplier int8
@@ -25,18 +25,18 @@ var codeToDirection = map[int8]Direction{
 	0:  Empty,
 }
 
-func (d Direction) IsOppositeTo(act action.Action) bool {
-	return (d == Long && act == action.Ask) ||
-		(d == Short && act == action.Bid)
+func (d Direction) IsOppositeTo(action order.Action) bool {
+	return (d == Long && action == order.Ask) ||
+		(d == Short && action == order.Bid)
 }
 
-func (d Direction) IsSameAs(act action.Action) bool {
-	return (d == Long && act == action.Bid) ||
-		(d == Short && act == action.Ask)
+func (d Direction) IsSameAs(action order.Action) bool {
+	return (d == Long && action == order.Bid) ||
+		(d == Short && action == order.Ask)
 }
 
-func FromAction(act action.Action) Direction {
-	if act == action.Bid {
+func FromAction(action order.Action) Direction {
+	if action == order.Bid {
 		return Long
 	} else {
 		return Short

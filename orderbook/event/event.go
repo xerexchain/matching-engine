@@ -1,7 +1,7 @@
 package event
 
 import (
-	"github.com/xerexchain/matching-engine/order/action"
+	"github.com/xerexchain/matching-engine/order"
 )
 
 // TODO move activeOrderCompleted, section into the order?
@@ -61,7 +61,7 @@ type reduce struct {
 	makerOrderCompleted bool
 	price               int64
 	quantity            int64 // reduced quantity
-	action              action.Action
+	action              order.Action
 	next                Event
 	_                   struct{}
 }
@@ -71,7 +71,7 @@ type reject struct {
 	takerOrderId int64
 	price        int64
 	quantity     int64 // rejected quantity
-	action       action.Action
+	action       order.Action
 	next         Event
 	_            struct{}
 }
@@ -169,13 +169,13 @@ func PrependReject(
 	orderId int64,
 	price int64,
 	quantity int64, // rejected quantity
-	act action.Action,
+	action order.Action,
 ) Reject {
 	r := NewReject(
 		orderId,
 		price,
 		quantity,
-		act,
+		action,
 	)
 
 	r.SetNext(to)
@@ -208,14 +208,14 @@ func NewReduce(
 	makerOrderCompleted bool,
 	price int64,
 	quantity int64, // reduced quantity
-	act action.Action,
+	action order.Action,
 ) Reduce {
 	return &reduce{
 		makerOrderId:        makerOrderId,
 		makerOrderCompleted: makerOrderCompleted,
 		price:               price,
 		quantity:            quantity,
-		action:              act,
+		action:              action,
 	}
 }
 
@@ -223,12 +223,12 @@ func NewReject(
 	takerOrderId int64,
 	price int64,
 	quantity int64, // rejected quantity
-	act action.Action,
+	action order.Action,
 ) Reject {
 	return &reject{
 		takerOrderId: takerOrderId,
 		price:        price,
 		quantity:     quantity,
-		action:       act,
+		action:       action,
 	}
 }
