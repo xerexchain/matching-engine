@@ -39,6 +39,17 @@ func MarshalInt8(in interface{}, out *bytes.Buffer) error {
 	return binary.Write(out, binary.LittleEndian, in.(int8))
 }
 
+func ReadInt8(in *bytes.Buffer) (int8, error) {
+	var res int8
+	err := binary.Read(in, binary.LittleEndian, &res)
+
+	return res, err
+}
+
+func WriteInt8(d int8, out *bytes.Buffer) error {
+	return binary.Write(out, binary.LittleEndian, d)
+}
+
 func UnmarshalUInt32(b *bytes.Buffer) (interface{}, error) {
 	var res uint32
 	err := binary.Read(b, binary.LittleEndian, &res)
@@ -70,6 +81,28 @@ func UnmarshalInt64(b *bytes.Buffer) (interface{}, error) {
 
 func MarshalInt64(in interface{}, out *bytes.Buffer) error {
 	return binary.Write(out, binary.LittleEndian, in.(int64))
+}
+
+func ReadInt32(b *bytes.Buffer) (int32, error) {
+	var res int32
+	err := binary.Read(b, binary.LittleEndian, &res)
+
+	return res, err
+}
+
+func WriteInt32(d int32, out *bytes.Buffer) error {
+	return binary.Write(out, binary.LittleEndian, d)
+}
+
+func ReadInt64(in *bytes.Buffer) (int64, error) {
+	var res int64
+	err := binary.Read(in, binary.LittleEndian, &res)
+
+	return res, err
+}
+
+func WriteInt64(d int64, out *bytes.Buffer) error {
+	return binary.Write(out, binary.LittleEndian, d)
 }
 
 func UnmarshalKeyVal(
@@ -114,7 +147,7 @@ func UnmarshalMap(
 	var val interface{}
 	var err error
 
-	if val, err = UnmarshalInt32(b); err != nil {
+	if val, err = ReadInt32(b); err != nil {
 		return nil, err
 	}
 
@@ -143,7 +176,7 @@ func MarshalMap(
 	map_ := reflect.ValueOf(in)
 	size := int32(map_.Len())
 
-	if err := MarshalInt32(size, out); err != nil {
+	if err := WriteInt32(size, out); err != nil {
 		return err
 	}
 
@@ -169,7 +202,7 @@ func UnmarshalLinkedHashMap(
 	var val interface{}
 	var err error
 
-	if val, err = UnmarshalInt32(b); err != nil {
+	if val, err = ReadInt32(b); err != nil {
 		return nil, err
 	}
 
@@ -197,7 +230,7 @@ func MarshalLinkedHashMap(
 ) error {
 	size := int32(linkedMap.Size())
 
-	if err := MarshalInt32(size, out); err != nil {
+	if err := WriteInt32(size, out); err != nil {
 		return err
 	}
 
@@ -219,7 +252,7 @@ func UnmarshalBtree(
 	var val interface{}
 	var err error
 
-	if val, err = UnmarshalInt32(b); err != nil {
+	if val, err = ReadInt32(b); err != nil {
 		return nil, err
 	}
 
@@ -246,7 +279,7 @@ func MarshalBtree(
 ) error {
 	size := int32(btree_.Len())
 
-	if err := MarshalInt32(size, out); err != nil {
+	if err := WriteInt32(size, out); err != nil {
 		return err
 	}
 
@@ -267,7 +300,7 @@ func UnmarshalInt32Int64(b *bytes.Buffer) (map[int32]int64, error) {
 	var val interface{}
 	var err error
 
-	if val, err = UnmarshalInt32(b); err != nil {
+	if val, err = ReadInt32(b); err != nil {
 		return nil, err
 	}
 
@@ -289,4 +322,50 @@ func UnmarshalInt32Int64(b *bytes.Buffer) (map[int32]int64, error) {
 	}
 
 	return res, nil
+}
+
+func UnmarshalSlice(
+	b *bytes.Buffer,
+	f func(*bytes.Buffer) (interface{}, error), // item unmarshaler
+) ([]interface{}, error) {
+	var val interface{}
+	var err error
+
+	if val, err = ReadInt32(b); err != nil {
+		return nil, err
+	}
+
+	size := val.(int32)
+	res := make([]interface{}, size)
+
+	for idx := int32(0); idx < size; idx++ {
+		if item, err := f(b); err != nil {
+			return nil, err
+		} else {
+			res[idx] = item
+		}
+	}
+
+	return res, nil
+}
+
+func MarshalSlice(
+	in interface{},
+	out *bytes.Buffer,
+	f func(interface{}, *bytes.Buffer) error, // item marshaler
+) error {
+	slice_ := reflect.ValueOf(in)
+	size := int32(slice_.Len())
+
+	if err := WriteInt32(size, out); err != nil {
+		return err
+	}
+
+	for i := 0; i < int(size); i++ { // TODO int
+		if err := f(slice_.Index(i).Interface(), out); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
