@@ -8,7 +8,7 @@ import (
 	"github.com/xerexchain/matching-engine/math"
 	"github.com/xerexchain/matching-engine/order/action"
 	"github.com/xerexchain/matching-engine/order/direction"
-	riskengine "github.com/xerexchain/matching-engine/process/risk_engine"
+	riskengine "github.com/xerexchain/matching-engine/processor/risk_engine"
 	"github.com/xerexchain/matching-engine/serialization"
 	"github.com/xerexchain/matching-engine/state"
 	"github.com/xerexchain/matching-engine/symbol"
@@ -407,14 +407,14 @@ func UnmarshalMargins(b *bytes.Buffer) (interface{}, error) {
 	positions := make(map[int32]Margin, size)
 
 	for size > 0 {
-		if k, v, err := serialization.UnmarshalKeyVal(
-			b,
-			serialization.UnmarshalInt32,
-			UnmarshalMargin,
-		); err != nil {
+		if k, err := serialization.UnmarshalInt32(b); err != nil {
 			return nil, err
 		} else {
-			positions[k.(int32)] = v.(Margin)
+			if v, err := UnmarshalMargin(b); err != nil {
+				return nil, err
+			} else {
+				positions[k.(int32)] = v.(Margin)
+			}
 		}
 
 		size--
