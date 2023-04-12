@@ -7,6 +7,7 @@ import (
 	"github.com/xerexchain/matching-engine/order/action"
 	orderType "github.com/xerexchain/matching-engine/order/t"
 	"github.com/xerexchain/matching-engine/serialization"
+	"github.com/xerexchain/matching-engine/symbol"
 	balanceAdjType "github.com/xerexchain/matching-engine/user/balance/adjustment/t"
 )
 
@@ -22,9 +23,9 @@ const (
 	BalanceAdj_  int8 = 11
 	SuspendUser_ int8 = 12
 	ResumeUser_  int8 = 13
+	AddAccounts_ int8 = 14 // TODO vs ADD_ACCOUNTS(1002),
 
-	BinaryDataQuery_   int8 = 90
-	BinaryDataCommand_ int8 = 91
+	AddSymbols_ int8 = 40 // TODO vs ADD_SYMBOLS(1003);
 
 	PersistStateMatching_ int8 = 110
 	PersistStateRisk_     int8 = 111
@@ -40,21 +41,22 @@ const (
 type Command interface {
 	serialization.Marshalable
 	serialization.Unmarshalable
-	Metadata() *Metadata
+	Metadata_() *Metadata
 	Code() int8
 }
 
 var codeToNew = map[int8]func() Command{
-	PlaceOrder_:        newPlaceOrder,
-	CancelOrder_:       newCancelOrder,
-	MoveOrder_:         newMoveOrder,
-	ReduceOrder_:       newReduceOrder,
-	AddUser_:           newAddUser,
-	BalanceAdj_:        newBalanceAdj,
-	SuspendUser_:       newSuspendUser,
-	ResumeUser_:        newResumeUser,
-	BinaryDataCommand_: newBinaryDataCommand,
-	Reset_:             newReset,
+	PlaceOrder_:  newPlaceOrder,
+	CancelOrder_: newCancelOrder,
+	MoveOrder_:   newMoveOrder,
+	ReduceOrder_: newReduceOrder,
+	AddUser_:     newAddUser,
+	BalanceAdj_:  newBalanceAdj,
+	SuspendUser_: newSuspendUser,
+	ResumeUser_:  newResumeUser,
+	AddAccounts_: newAddAccounts,
+	AddSymbols_:  newAddSymbols,
+	Reset_:       newReset,
 }
 
 // TODO rename?
@@ -66,87 +68,96 @@ type Metadata struct {
 }
 
 type PlaceOrder struct {
-	orderId       int64 // TODO Is it redundant?
-	userId        int64
-	price         int64
-	quantity      int64
-	reservedPrice int64
-	symbolId      int32
-	userCookie    int32
-	action        action.Action
-	t             orderType.T
-	metadata      *Metadata
-	_             struct{}
+	/*
+	 * When the order is not fully filled,
+	 * OrderId is used to insert new order into orderbook
+	 */
+	OrderId int64
+
+	UserId        int64
+	Price         int64
+	Quantity      int64
+	ReservedPrice int64
+	SymbolId      int32
+	UserCookie    int32
+	Timestamp     int64 // TODO make sure filled everywhere
+	action.Action
+	orderType.T
+	Metadata
+	_ struct{}
 }
 
 type CancelOrder struct {
-	orderId  int64
-	userId   int64
-	symbolId int32
-	metadata *Metadata
-	_        struct{}
+	OrderId  int64
+	UserId   int64
+	SymbolId int32
+	Metadata
+	_ struct{}
 }
 
 type MoveOrder struct {
-	orderId  int64
-	userId   int64
-	symbolId int32
-	toPrice  int64
-	metadata *Metadata
-	_        struct{}
+	OrderId  int64
+	UserId   int64
+	SymbolId int32
+	ToPrice  int64
+	Metadata
+	_ struct{}
 }
 
 type ReduceOrder struct {
-	orderId   int64
-	userId    int64
-	symbolId  int32
-	quanitity int64
-	metadata  *Metadata
-	_         struct{}
+	OrderId   int64
+	UserId    int64
+	SymbolId  int32
+	Quanitity int64
+	Metadata
+	_ struct{}
 }
 
 type AddUser struct {
-	userId   int64
-	metadata *Metadata
-	_        struct{}
+	UserId int64
+	Metadata
+	_ struct{}
 }
 
 type BalanceAdj struct {
-	userId   int64
-	currency int32
-	amount   int64
-	txid     int64
-	t        balanceAdjType.T
-	metadata *Metadata
-	_        struct{}
+	UserId   int64
+	Currency int32
+	Amount   int64
+	TXID     int64
+	balanceAdjType.T
+	Metadata
+	_ struct{}
 }
 
 type SuspendUser struct {
-	userId   int64
-	metadata *Metadata
-	_        struct{}
+	UserId int64
+	Metadata
+	_ struct{}
 }
 
 type ResumeUser struct {
-	userId   int64
-	metadata *Metadata
-	_        struct{}
+	UserId int64
+	Metadata
+	_ struct{}
 }
 
-type BinaryDataCommand struct {
-	lastFlag int8
-	word0    int64
-	word1    int64
-	word2    int64
-	word3    int64
-	word4    int64
-	metadata *Metadata
-	_        struct{}
+// TODO EqualsAndHashCode overriden
+type AddAccounts struct {
+	Users map[interface{}]interface{} // map[int64]map[int32]int64
+	Metadata
+	_ struct{}
+}
+
+// TODO EqualsAndHashCode overriden
+type AddSymbols struct {
+	Symbols map[interface{}]interface{} // map[int32]symbol.Symbol
+	Metadata
+	_ struct{}
 }
 
 type Reset struct {
-	metadata *Metadata
-	_        struct{}
+	Metadata
+	_ struct{}
 }
 
 func unmarshalUserIdSymbolIdOrderId(in *bytes.Buffer) (int64, int32, int64, error) {
@@ -206,9 +217,7 @@ func (m *Metadata) Unmarshal(in *bytes.Buffer) error {
 }
 
 func (c *PlaceOrder) Unmarshal(in *bytes.Buffer) error {
-	metadata := &Metadata{}
-
-	err := metadata.Unmarshal(in)
+	err := c.Metadata.Unmarshal(in)
 
 	if err != nil {
 		return err
@@ -265,24 +274,21 @@ func (c *PlaceOrder) Unmarshal(in *bytes.Buffer) error {
 		return fmt.Errorf("failed to unmarshal order type: %v", code)
 	}
 
-	c.orderId = orderId
-	c.userId = userId
-	c.price = price.(int64)
-	c.quantity = quanitity.(int64)
-	c.reservedPrice = reservedBidPrice.(int64)
-	c.symbolId = symbolId
-	c.userCookie = userCookie.(int32)
-	c.action = act
-	c.t = t
-	c.metadata = metadata
+	c.OrderId = orderId
+	c.UserId = userId
+	c.Price = price.(int64)
+	c.Quantity = quanitity.(int64)
+	c.ReservedPrice = reservedBidPrice.(int64)
+	c.SymbolId = symbolId
+	c.UserCookie = userCookie.(int32)
+	c.Action = act
+	c.T = t
 
 	return nil
 }
 
 func (c *CancelOrder) Unmarshal(in *bytes.Buffer) error {
-	metadata := &Metadata{}
-
-	err := metadata.Unmarshal(in)
+	err := c.Metadata.Unmarshal(in)
 
 	if err != nil {
 		return err
@@ -294,18 +300,15 @@ func (c *CancelOrder) Unmarshal(in *bytes.Buffer) error {
 		return err
 	}
 
-	c.orderId = orderId
-	c.userId = userId
-	c.symbolId = symbolId
-	c.metadata = metadata
+	c.OrderId = orderId
+	c.UserId = userId
+	c.SymbolId = symbolId
 
 	return nil
 }
 
 func (c *MoveOrder) Unmarshal(in *bytes.Buffer) error {
-	metadata := &Metadata{}
-
-	err := metadata.Unmarshal(in)
+	err := c.Metadata.Unmarshal(in)
 
 	if err != nil {
 		return err
@@ -323,19 +326,16 @@ func (c *MoveOrder) Unmarshal(in *bytes.Buffer) error {
 		return err
 	}
 
-	c.orderId = orderId
-	c.userId = userId
-	c.symbolId = symbolId
-	c.toPrice = toPrice.(int64)
-	c.metadata = metadata
+	c.OrderId = orderId
+	c.UserId = userId
+	c.SymbolId = symbolId
+	c.ToPrice = toPrice.(int64)
 
 	return nil
 }
 
 func (c *ReduceOrder) Unmarshal(in *bytes.Buffer) error {
-	metadata := &Metadata{}
-
-	err := metadata.Unmarshal(in)
+	err := c.Metadata.Unmarshal(in)
 
 	if err != nil {
 		return err
@@ -353,19 +353,16 @@ func (c *ReduceOrder) Unmarshal(in *bytes.Buffer) error {
 		return err
 	}
 
-	c.orderId = orderId
-	c.userId = userId
-	c.symbolId = symbolId
-	c.quanitity = quanitity.(int64)
-	c.metadata = metadata
+	c.OrderId = orderId
+	c.UserId = userId
+	c.SymbolId = symbolId
+	c.Quanitity = quanitity.(int64)
 
 	return nil
 }
 
 func (c *AddUser) Unmarshal(in *bytes.Buffer) error {
-	metadata := &Metadata{}
-
-	err := metadata.Unmarshal(in)
+	err := c.Metadata.Unmarshal(in)
 
 	if err != nil {
 		return err
@@ -377,16 +374,13 @@ func (c *AddUser) Unmarshal(in *bytes.Buffer) error {
 		return err
 	}
 
-	c.userId = userId.(int64)
-	c.metadata = metadata
+	c.UserId = userId.(int64)
 
 	return nil
 }
 
 func (c *BalanceAdj) Unmarshal(in *bytes.Buffer) error {
-	metadata := &Metadata{}
-
-	err := metadata.Unmarshal(in)
+	err := c.Metadata.Unmarshal(in)
 
 	if err != nil {
 		return err
@@ -428,20 +422,17 @@ func (c *BalanceAdj) Unmarshal(in *bytes.Buffer) error {
 		return fmt.Errorf("failed to unmarshal balance adj type: %v", val)
 	}
 
-	c.userId = userId.(int64)
-	c.currency = currency.(int32)
-	c.txid = txid.(int64)
-	c.amount = amount.(int64)
-	c.t = t
-	c.metadata = metadata
+	c.UserId = userId.(int64)
+	c.Currency = currency.(int32)
+	c.TXID = txid.(int64)
+	c.Amount = amount.(int64)
+	c.T = t
 
 	return nil
 }
 
 func (c *SuspendUser) Unmarshal(in *bytes.Buffer) error {
-	metadata := &Metadata{}
-
-	err := metadata.Unmarshal(in)
+	err := c.Metadata.Unmarshal(in)
 
 	if err != nil {
 		return err
@@ -453,16 +444,13 @@ func (c *SuspendUser) Unmarshal(in *bytes.Buffer) error {
 		return err
 	}
 
-	c.userId = userId.(int64)
-	c.metadata = metadata
+	c.UserId = userId.(int64)
 
 	return nil
 }
 
 func (c *ResumeUser) Unmarshal(in *bytes.Buffer) error {
-	metadata := &Metadata{}
-
-	err := metadata.Unmarshal(in)
+	err := c.Metadata.Unmarshal(in)
 
 	if err != nil {
 		return err
@@ -474,78 +462,67 @@ func (c *ResumeUser) Unmarshal(in *bytes.Buffer) error {
 		return err
 	}
 
-	c.userId = userId.(int64)
-	c.metadata = metadata
+	c.UserId = userId.(int64)
 
 	return nil
 }
 
-func (c *BinaryDataCommand) Unmarshal(in *bytes.Buffer) error {
-	metadata := &Metadata{}
+func (c *AddAccounts) Unmarshal(in *bytes.Buffer) error {
+	// err := c.Metadata.Unmarshal(in)
 
-	err := metadata.Unmarshal(in)
+	// if err != nil {
+	// 	return err
+	// }
 
-	if err != nil {
-		return err
-	}
-
-	lastFlag, err := serialization.UnmarshalInt8(in)
-
-	if err != nil {
-		return err
-	}
-
-	word0, err := serialization.UnmarshalInt64(in)
-
-	if err != nil {
-		return err
-	}
-
-	word1, err := serialization.UnmarshalInt64(in)
+	users, err := serialization.UnmarshalMap(
+		in,
+		serialization.UnmarshalInt64,
+		func(b *bytes.Buffer) (interface{}, error) {
+			return serialization.UnmarshalMap(
+				b,
+				serialization.UnmarshalInt32,
+				serialization.UnmarshalInt64,
+			)
+		},
+	)
 
 	if err != nil {
 		return err
 	}
 
-	word2, err := serialization.UnmarshalInt64(in)
+	c.Users = users
+
+	return nil
+}
+
+func (c *AddSymbols) Unmarshal(in *bytes.Buffer) error {
+	// err := c.Metadata.Unmarshal(in)
+
+	// if err != nil {
+	// 	return err
+	// }
+
+	symbols, err := serialization.UnmarshalMap(
+		in,
+		serialization.UnmarshalInt32,
+		symbol.UnmarshalSymbol,
+	)
 
 	if err != nil {
 		return err
 	}
 
-	word3, err := serialization.UnmarshalInt64(in)
-
-	if err != nil {
-		return err
-	}
-
-	word4, err := serialization.UnmarshalInt64(in)
-
-	if err != nil {
-		return err
-	}
-
-	c.lastFlag = lastFlag.(int8)
-	c.word0 = word0.(int64)
-	c.word1 = word1.(int64)
-	c.word2 = word2.(int64)
-	c.word3 = word3.(int64)
-	c.word4 = word4.(int64)
-	c.metadata = metadata
+	c.Symbols = symbols
 
 	return nil
 }
 
 func (c *Reset) Unmarshal(in *bytes.Buffer) error {
-	metadata := &Metadata{}
-
-	err := metadata.Unmarshal(in)
+	err := c.Metadata.Unmarshal(in)
 
 	if err != nil {
 		return err
 	}
-
-	c.metadata = metadata
 
 	return nil
 }
@@ -592,36 +569,36 @@ func (m *Metadata) Marshal(out *bytes.Buffer) error {
 }
 
 func (c *PlaceOrder) Marshal(out *bytes.Buffer) error {
-	if err := c.metadata.Marshal(out); err != nil {
+	if err := c.Metadata.Marshal(out); err != nil {
 		return err
 	}
 
 	if err := marshalUserIdSymbolIdOrderId(
-		c.userId,
-		c.symbolId,
-		c.orderId,
+		c.UserId,
+		c.SymbolId,
+		c.OrderId,
 		out,
 	); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(c.price, out); err != nil {
+	if err := serialization.MarshalInt64(c.Price, out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(c.reservedPrice, out); err != nil {
+	if err := serialization.MarshalInt64(c.ReservedPrice, out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(c.quantity, out); err != nil {
+	if err := serialization.MarshalInt64(c.Quantity, out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt32(c.userCookie, out); err != nil {
+	if err := serialization.MarshalInt32(c.UserCookie, out); err != nil {
 		return err
 	}
 
-	actionAndType := (int8(c.t) << 1) | int8(c.action)
+	actionAndType := (int8(c.T) << 1) | int8(c.Action)
 
 	if err := serialization.MarshalInt8(actionAndType, out); err != nil {
 		return err
@@ -631,14 +608,14 @@ func (c *PlaceOrder) Marshal(out *bytes.Buffer) error {
 }
 
 func (c *CancelOrder) Marshal(out *bytes.Buffer) error {
-	if err := c.metadata.Marshal(out); err != nil {
+	if err := c.Metadata.Marshal(out); err != nil {
 		return err
 	}
 
 	if err := marshalUserIdSymbolIdOrderId(
-		c.userId,
-		c.symbolId,
-		c.orderId,
+		c.UserId,
+		c.SymbolId,
+		c.OrderId,
 		out,
 	); err != nil {
 		return err
@@ -648,20 +625,20 @@ func (c *CancelOrder) Marshal(out *bytes.Buffer) error {
 }
 
 func (c *MoveOrder) Marshal(out *bytes.Buffer) error {
-	if err := c.metadata.Marshal(out); err != nil {
+	if err := c.Metadata.Marshal(out); err != nil {
 		return err
 	}
 
 	if err := marshalUserIdSymbolIdOrderId(
-		c.userId,
-		c.symbolId,
-		c.orderId,
+		c.UserId,
+		c.SymbolId,
+		c.OrderId,
 		out,
 	); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(c.toPrice, out); err != nil {
+	if err := serialization.MarshalInt64(c.ToPrice, out); err != nil {
 		return err
 	}
 
@@ -669,20 +646,20 @@ func (c *MoveOrder) Marshal(out *bytes.Buffer) error {
 }
 
 func (c *ReduceOrder) Marshal(out *bytes.Buffer) error {
-	if err := c.metadata.Marshal(out); err != nil {
+	if err := c.Metadata.Marshal(out); err != nil {
 		return err
 	}
 
 	if err := marshalUserIdSymbolIdOrderId(
-		c.userId,
-		c.symbolId,
-		c.orderId,
+		c.UserId,
+		c.SymbolId,
+		c.OrderId,
 		out,
 	); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(c.quanitity, out); err != nil {
+	if err := serialization.MarshalInt64(c.Quanitity, out); err != nil {
 		return err
 	}
 
@@ -690,11 +667,11 @@ func (c *ReduceOrder) Marshal(out *bytes.Buffer) error {
 }
 
 func (c *AddUser) Marshal(out *bytes.Buffer) error {
-	if err := c.metadata.Marshal(out); err != nil {
+	if err := c.Metadata.Marshal(out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(c.userId, out); err != nil {
+	if err := serialization.MarshalInt64(c.UserId, out); err != nil {
 		return err
 	}
 
@@ -702,27 +679,27 @@ func (c *AddUser) Marshal(out *bytes.Buffer) error {
 }
 
 func (c *BalanceAdj) Marshal(out *bytes.Buffer) error {
-	if err := c.metadata.Marshal(out); err != nil {
+	if err := c.Metadata.Marshal(out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(c.userId, out); err != nil {
+	if err := serialization.MarshalInt64(c.UserId, out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt32(c.currency, out); err != nil {
+	if err := serialization.MarshalInt32(c.Currency, out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(c.txid, out); err != nil {
+	if err := serialization.MarshalInt64(c.TXID, out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(c.amount, out); err != nil {
+	if err := serialization.MarshalInt64(c.Amount, out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt8(int8(c.t), out); err != nil {
+	if err := serialization.MarshalInt8(int8(c.T), out); err != nil {
 		return err
 	}
 
@@ -730,11 +707,11 @@ func (c *BalanceAdj) Marshal(out *bytes.Buffer) error {
 }
 
 func (c *SuspendUser) Marshal(out *bytes.Buffer) error {
-	if err := c.metadata.Marshal(out); err != nil {
+	if err := c.Metadata.Marshal(out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(c.userId, out); err != nil {
+	if err := serialization.MarshalInt64(c.UserId, out); err != nil {
 		return err
 	}
 
@@ -742,95 +719,100 @@ func (c *SuspendUser) Marshal(out *bytes.Buffer) error {
 }
 
 func (c *ResumeUser) Marshal(out *bytes.Buffer) error {
-	if err := c.metadata.Marshal(out); err != nil {
+	if err := c.Metadata.Marshal(out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(c.userId, out); err != nil {
+	if err := serialization.MarshalInt64(c.UserId, out); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (c *BinaryDataCommand) Marshal(out *bytes.Buffer) error {
-	if err := c.metadata.Marshal(out); err != nil {
-		return err
-	}
+func (c *AddAccounts) Marshal(out *bytes.Buffer) error {
+	// if err := c.Metadata.Marshal(out); err != nil {
+	// 	return err
+	// }
 
-	if err := serialization.MarshalInt8(c.lastFlag, out); err != nil {
-		return err
-	}
+	return serialization.MarshalMap(
+		c.Users,
+		out,
+		serialization.MarshalInt64,
+		func(in interface{}, b *bytes.Buffer) error {
+			return serialization.MarshalMap(
+				in,
+				b,
+				serialization.MarshalInt32,
+				serialization.MarshalInt64,
+			)
+		},
+	)
+}
 
-	if err := serialization.MarshalInt64(c.word0, out); err != nil {
-		return err
-	}
+func (c *AddSymbols) Marshal(out *bytes.Buffer) error {
+	// if err := c.Metadata.Marshal(out); err != nil {
+	// 	return err
+	// }
 
-	if err := serialization.MarshalInt64(c.word1, out); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt64(c.word2, out); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt64(c.word3, out); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt64(c.word4, out); err != nil {
-		return err
-	}
-
-	return nil
+	return serialization.MarshalMap(
+		c.Symbols,
+		out,
+		serialization.MarshalInt32,
+		symbol.MarshalSymbol,
+	)
 }
 
 func (c *Reset) Marshal(out *bytes.Buffer) error {
-	if err := c.metadata.Marshal(out); err != nil {
+	if err := c.Metadata.Marshal(out); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (c *PlaceOrder) Metadata() *Metadata {
-	return c.metadata
+func (c *PlaceOrder) Metadata_() *Metadata {
+	return &(c.Metadata)
 }
 
-func (c *CancelOrder) Metadata() *Metadata {
-	return c.metadata
+func (c *CancelOrder) Metadata_() *Metadata {
+	return &(c.Metadata)
 }
 
-func (c *MoveOrder) Metadata() *Metadata {
-	return c.metadata
+func (c *MoveOrder) Metadata_() *Metadata {
+	return &(c.Metadata)
 }
 
-func (c *ReduceOrder) Metadata() *Metadata {
-	return c.metadata
+func (c *ReduceOrder) Metadata_() *Metadata {
+	return &(c.Metadata)
 }
 
-func (c *AddUser) Metadata() *Metadata {
-	return c.metadata
+func (c *AddUser) Metadata_() *Metadata {
+	return &(c.Metadata)
 }
 
-func (c *BalanceAdj) Metadata() *Metadata {
-	return c.metadata
+func (c *BalanceAdj) Metadata_() *Metadata {
+	return &(c.Metadata)
 }
 
-func (c *SuspendUser) Metadata() *Metadata {
-	return c.metadata
+func (c *SuspendUser) Metadata_() *Metadata {
+	return &(c.Metadata)
 }
 
-func (c *ResumeUser) Metadata() *Metadata {
-	return c.metadata
+func (c *ResumeUser) Metadata_() *Metadata {
+	return &(c.Metadata)
 }
 
-func (c *BinaryDataCommand) Metadata() *Metadata {
-	return c.metadata
+func (c *AddAccounts) Metadata_() *Metadata {
+	return &(c.Metadata)
 }
 
-func (c *Reset) Metadata() *Metadata {
-	return c.metadata
+func (c *AddSymbols) Metadata_() *Metadata {
+	return &(c.Metadata)
+}
+
+func (c *Reset) Metadata_() *Metadata {
+	return &(c.Metadata)
 }
 
 func (c *PlaceOrder) Code() int8 {
@@ -865,8 +847,12 @@ func (c *ResumeUser) Code() int8 {
 	return ResumeUser_
 }
 
-func (c *BinaryDataCommand) Code() int8 {
-	return BinaryDataCommand_
+func (c *AddAccounts) Code() int8 {
+	return AddAccounts_
+}
+
+func (c *AddSymbols) Code() int8 {
+	return AddSymbols_
 }
 
 func (c *Reset) Code() int8 {
@@ -905,8 +891,12 @@ func newResumeUser() Command {
 	return &ResumeUser{}
 }
 
-func newBinaryDataCommand() Command {
-	return &BinaryDataCommand{}
+func newAddAccounts() Command {
+	return &AddAccounts{}
+}
+
+func newAddSymbols() Command {
+	return &AddSymbols{}
 }
 
 func newReset() Command {

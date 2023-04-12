@@ -17,14 +17,14 @@ import (
 	"github.com/xerexchain/matching-engine/serialization"
 )
 
-type module string // TODO rename? byte or string?
+type ModuleT string // TODO rename? byte or string?
 
 const (
-	riskEngine           module = "RE"
-	matchingEngineRouter module = "ME"
-	maxOriginalSize      int32  = 1000000
-	maxCompressedSize    int32  = 1000000
-	maxCommandSizeBytes  int32  = 256
+	riskEngine           ModuleT = "RE"
+	MatchingEngineRouter ModuleT = "ME"
+	maxOriginalSize      int32   = 1000000
+	maxCompressedSize    int32   = 1000000
+	maxCommandSizeBytes  int32   = 256
 )
 
 // TODO Comparable<SnapshotDescriptor>
@@ -56,8 +56,8 @@ type journal struct {
 
 // TODO rename?
 type Processor interface {
-	Store(int64, int64, int64, module, int32, serialization.Marshalable) bool
-	Load(int64, module, int32, func(*bytes.Buffer) interface{}) interface{}
+	Store(int64, int64, int64, ModuleT, int32, serialization.Marshalable) bool
+	Load(int64, ModuleT, int32, func(*bytes.Buffer) interface{}) interface{}
 
 	// error in case of writing issue (will stop matching-engine from responding)
 	WriteToJournal(cmd.Command, int64, bool) error
@@ -67,7 +67,7 @@ type Processor interface {
 
 	// sequential map of snapshots, int64 -> *Snapshot
 	// Snapshots() *treemap.Map
-	SnapshotExists(int64, module, int32) bool
+	SnapshotExists(int64, ModuleT, int32) bool
 }
 
 // TODO rename?
@@ -102,11 +102,11 @@ func snapshotComparator(a, b interface{}) int {
 	}
 }
 
-func canLoadFromSnapshot(
+func CanLoadFromSnapshot(
 	p Processor,
 	cfg cfg.InitialState,
 	shardId int32,
-	mod module,
+	mod ModuleT,
 ) bool {
 	if cfg.BaseSnapshotId != 0 {
 		if p.SnapshotExists(
@@ -156,7 +156,7 @@ func (p *processor) Store(
 	snapshotId int64,
 	seq int64,
 	timestampNs int64,
-	mod module,
+	mod ModuleT,
 	instanceId int32,
 	marshalable serialization.Marshalable,
 ) bool {
@@ -183,7 +183,7 @@ func (p *processor) Store(
 
 func (p *processor) Load(
 	snapshotId int64,
-	mod module,
+	mod ModuleT,
 	instanceId int32,
 	init func(*bytes.Buffer) interface{},
 ) interface{} {
@@ -216,7 +216,7 @@ func (p *processor) WriteToJournal(
 		return nil
 	}
 
-	timestamp := command.Metadata().TimestampNs // TODO vs cmd.timestamp
+	timestamp := command.Metadata_().TimestampNs // TODO vs cmd.timestamp
 	code := command.Code()
 
 	if code == cmd.ShutdownSignal_ {
@@ -239,7 +239,7 @@ func (p *processor) WriteToJournal(
 		return err
 	}
 
-	command.Metadata().Seq = dSeq + p.initialStateCfg.BaseSnapshotSeq
+	command.Metadata_().Seq = dSeq + p.initialStateCfg.BaseSnapshotSeq
 	command.Marshal(p.journalBuf)
 
 	if code == cmd.PersistStateRisk_ {
@@ -266,7 +266,7 @@ func (p *processor) EnableJournalingAfter(seq int64) {
 
 func (p *processor) SnapshotExists(
 	snapshotId int64,
-	mod module,
+	mod ModuleT,
 	instanceId int32,
 ) bool {
 	path := p.snapshotPath(snapshotId, mod, instanceId)
@@ -344,7 +344,7 @@ func (p *processor) readCommands(
 		} else {
 			emptyCommand.Unmarshal(buf)
 			command := emptyCommand
-			seq := command.Metadata().Seq
+			seq := command.Metadata_().Seq
 
 			if seq != *lastSeq+1 {
 				log.Printf("warn: Sequence gap %v->%v (%v)", lastSeq, seq, seq-*lastSeq)
@@ -495,7 +495,7 @@ func (p *processor) mainLogPath() string {
 
 func (p *processor) snapshotPath(
 	snapshotId int64,
-	mod module,
+	mod ModuleT,
 	instanceId int32,
 ) string {
 	return fmt.Sprintf(
