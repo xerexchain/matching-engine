@@ -12,6 +12,7 @@ import (
 type Symbol interface {
 	state.Hashable
 	serialization.Marshalable
+	Id() int32
 }
 
 // TODO equals overriden
@@ -54,6 +55,10 @@ type option struct {
 	_       struct{}
 }
 
+func (s *symbol) Id() int32 {
+	return s.Id_
+}
+
 func (s *symbol) Hash() uint64 {
 	hash, err := hashstructure.Hash(*s, hashstructure.FormatV2, nil)
 
@@ -90,6 +95,7 @@ func (f *futureContract) Marshal(out *bytes.Buffer) error {
 	return MarshalFutureContract(f, out)
 }
 
+// TODO rename
 // TODO This is incompatible with exchange-core: `bytes.writeByte(type.getCode());`
 func MarshalSymbol(in interface{}, out *bytes.Buffer) error {
 	s := in.(*symbol)
@@ -125,6 +131,7 @@ func MarshalSymbol(in interface{}, out *bytes.Buffer) error {
 	return nil
 }
 
+// TODO rename
 // TODO This is incompatible with exchange-core: `SymbolType.of(bytes.readByte());`
 func UnmarshalSymbol(b *bytes.Buffer) (interface{}, error) {
 	s := symbol{}
