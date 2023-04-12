@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/mitchellh/hashstructure/v2"
-	"github.com/xerexchain/matching-engine/order/position"
+	"github.com/xerexchain/matching-engine/position"
 	"github.com/xerexchain/matching-engine/serialization"
 	"github.com/xerexchain/matching-engine/state"
 )

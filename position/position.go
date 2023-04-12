@@ -7,7 +7,6 @@ import (
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/xerexchain/matching-engine/math"
 	"github.com/xerexchain/matching-engine/order"
-	"github.com/xerexchain/matching-engine/order/direction"
 	riskengine "github.com/xerexchain/matching-engine/processor/risk_engine"
 	"github.com/xerexchain/matching-engine/serialization"
 	"github.com/xerexchain/matching-engine/state"
@@ -49,7 +48,7 @@ type margin struct {
 	OpenQuantity int64 // TODO doc
 	OpenPriceSum int64 // TODO doc // TODO break to openPrice and OpenSum
 	Profit       int64 // TODO doc
-	direction.Direction
+	Direction    direction
 
 	// pending orders total quantity
 	// increment before sending order to matching engine
@@ -65,7 +64,7 @@ func (m *margin) SetUserId(id int64) {
 
 // Check if position is empty (no pending orders, no open trades) - can remove it from hashmap
 func (m *margin) IsEmpty() bool {
-	return m.Direction == direction.Empty &&
+	return m.Direction == _empty &&
 		m.PendingSellQuantity == 0 &&
 		m.PendingBuyQuantity == 0
 }
@@ -96,9 +95,9 @@ func (m *margin) EstimateProfit(
 	rec riskengine.LastPriceCacheRecord,
 ) int64 {
 	switch m.Direction {
-	case direction.Empty:
+	case _empty:
 		return m.Profit
-	case direction.Long:
+	case _long:
 		{
 			p := m.Profit
 
@@ -111,7 +110,7 @@ func (m *margin) EstimateProfit(
 
 			return p
 		}
-	case direction.Short:
+	case _short:
 		{
 			p := m.Profit
 
@@ -133,7 +132,7 @@ func (m *margin) EstimateProfit(
 func (m *margin) M(
 	sym symbol.FutureContract,
 ) (int64, int64) {
-	signedPosition := m.OpenQuantity * int64(m.Direction.Multiplier)
+	signedPosition := m.OpenQuantity * int64(m.Direction)
 	currRiskBuyQuantity := m.PendingBuyQuantity + signedPosition
 	currRiskSellQuantity := m.PendingSellQuantity - signedPosition
 
@@ -203,7 +202,7 @@ func (m *margin) CloseCurrPositionFutures(
 	tradeQuantity int64,
 	price int64,
 ) int64 {
-	if m.Direction == direction.Empty || m.Direction == direction.FromAction(action) {
+	if m.Direction == _empty || m.Direction == directionFromAction(action) {
 		// nothing to close
 		return tradeQuantity
 	}
@@ -216,9 +215,9 @@ func (m *margin) CloseCurrPositionFutures(
 	}
 
 	// current position smaller than trade quantity, can close completely and calculate profit
-	m.Profit += (m.OpenQuantity*price - m.OpenPriceSum) * int64(m.Direction.Multiplier)
+	m.Profit += (m.OpenQuantity*price - m.OpenPriceSum) * int64(m.Direction)
 	m.OpenPriceSum = 0
-	m.Direction = direction.Empty
+	m.Direction = _empty
 	quantityToOpen := tradeQuantity - m.OpenQuantity
 	m.OpenQuantity = 0
 
@@ -234,7 +233,7 @@ func (m *margin) OpenPositionMargin(
 ) {
 	m.OpenQuantity += quantityToOpen
 	m.OpenPriceSum += quantityToOpen * price
-	m.Direction = direction.FromAction(action)
+	m.Direction = directionFromAction(action)
 
 	m.ValidateInternalState() // TODO comment or not?
 }
@@ -244,11 +243,11 @@ func (m *margin) Reset() {
 	m.PendingSellQuantity = 0
 	m.OpenQuantity = 0
 	m.OpenPriceSum = 0
-	m.Direction = direction.Empty
+	m.Direction = _empty
 }
 
 func (m *margin) ValidateInternalState() {
-	if m.Direction == direction.Empty && (m.OpenQuantity != 0 || m.OpenPriceSum != 0) {
+	if m.Direction == _empty && (m.OpenQuantity != 0 || m.OpenPriceSum != 0) {
 		log.Panicf(
 			"Error: userId %v : position:%v totalQuantity:%v openPriceSum:%v",
 			m.UserId,
@@ -258,7 +257,7 @@ func (m *margin) ValidateInternalState() {
 		)
 	}
 
-	if m.Direction == direction.Empty && (m.OpenQuantity <= 0 || m.OpenPriceSum <= 0) {
+	if m.Direction == _empty && (m.OpenQuantity <= 0 || m.OpenPriceSum <= 0) {
 		log.Panicf(
 			"Error: userId %v : position:%v totalQuantity:%v openPriceSum:%v",
 			m.UserId,
@@ -307,7 +306,7 @@ func MarshalMargin(in interface{}, out *bytes.Buffer) error {
 		return err
 	}
 
-	if err := serialization.MarshalInt8(s.Direction.Multiplier, out); err != nil {
+	if err := serialization.MarshalInt8(s.Direction, out); err != nil {
 		return err
 	}
 
@@ -356,10 +355,10 @@ func UnmarshalMargin(b *bytes.Buffer) (interface{}, error) {
 		m.Currency = val.(int32)
 	}
 
-	if val, err := serialization.UnmarshalInt8(b); err != nil {
+	if code, err := serialization.UnmarshalInt8(b); err != nil {
 		return nil, err
 	} else {
-		m.Direction = direction.FromByte(val.(int8))
+		m.Direction = directionFromInt8(code.(int8))
 	}
 
 	if val, err := serialization.UnmarshalInt64(b); err != nil {
@@ -432,6 +431,6 @@ func NewMargin(
 		UserId:    userId,
 		SymbolId:  symbolId,
 		Currency:  currency,
-		Direction: direction.Empty,
+		Direction: _empty,
 	}
 }
