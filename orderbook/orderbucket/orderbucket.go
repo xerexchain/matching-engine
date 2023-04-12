@@ -19,13 +19,13 @@ type Naive interface {
 	btree.Item
 	serialization.Marshalable
 	Price() int64
-	Put(order.Order)
+	Put(*order.Order)
 	Remove(int64)
 	Reduce(int64)
 	NumOrders() int32
 	AllOrders() []interface{}
-	Find(int64) (order.Order, bool)
-	ForEachOrder(func(order.Order))
+	Find(int64) (*order.Order, bool)
+	ForEachOrder(func(*order.Order))
 	TotalQuantity() int64
 	Validate()
 	Match(int64, int64) *MatcherResult
@@ -50,8 +50,8 @@ func (n *naive) Price() int64 {
 	return n.price
 }
 
-func (n *naive) Put(ord order.Order) {
-	id := ord.Id()
+func (n *naive) Put(ord *order.Order) {
+	id := ord.ID()
 	n.orders.Put(id, ord)
 	n.totalQuantity += ord.Remained()
 }
@@ -81,18 +81,18 @@ func (n *naive) AllOrders() []interface{} {
 }
 
 // TODO side effects imposed by the caller
-func (n *naive) Find(orderId int64) (order.Order, bool) {
+func (n *naive) Find(orderId int64) (*order.Order, bool) {
 	if val, ok := n.orders.Get(orderId); ok {
-		return val.(order.Order), true
+		return val.(*order.Order), true
 	}
 
 	return nil, false
 }
 
 // TODO side effects imposed by the caller
-func (n *naive) ForEachOrder(f func(order.Order)) {
+func (n *naive) ForEachOrder(f func(*order.Order)) {
 	for _, v := range n.AllOrders() {
-		ord := v.(order.Order)
+		ord := v.(*order.Order)
 		f(ord)
 	}
 }
@@ -104,7 +104,7 @@ func (n *naive) TotalQuantity() int64 {
 func (n *naive) Validate() {
 	sum := int64(0)
 
-	accumulator := func(ord order.Order) {
+	accumulator := func(ord *order.Order) {
 		sum += ord.Remained()
 	}
 
@@ -140,13 +140,14 @@ func (n *naive) Match(
 
 		ord := v.(order.Order)
 		tradedQuantity := math.Min(ord.Remained(), diff)
+		// TODO catch error
 		ord.Fill(tradedQuantity)
 		n.Reduce(tradedQuantity)
 		collected += tradedQuantity
 
 		if ord.Remained() == 0 {
-			n.Remove(ord.Id())
-			removedOrders = append(removedOrders, ord.Id())
+			n.Remove(ord.ID())
+			removedOrders = append(removedOrders, ord.ID())
 		}
 
 		if ord.Action() == action.Ask {
@@ -156,8 +157,8 @@ func (n *naive) Match(
 		}
 
 		e := event.NewTrade(
-			ord.Id(),
-			ord.UserId(),
+			ord.ID(),
+			ord.UserID(),
 			ord.Remained() == 0,
 			collected == toCollect,
 			ord.Price(),
@@ -200,13 +201,24 @@ func MarshalNaive(
 		return err
 	}
 
-	if err := serialization.MarshalLinkedHashMap(
-		n.orders,
-		out,
-		serialization.MarshalInt64,
-		order.Marshal,
-	); err != nil {
+	size := int32(n.orders.Size())
+
+	if err := serialization.MarshalInt32(size, out); err != nil {
 		return err
+	}
+
+	for _, k := range n.orders.Keys() {
+		v, _ := n.orders.Get(k)
+
+		if err := serialization.MarshalInt64(k, out); err != nil {
+			return err
+		}
+
+		ord := v.(*order.Order)
+
+		if err := ord.Marshal(out); err != nil {
+			return err
+		}
 	}
 
 	if err := serialization.MarshalInt64(n.totalQuantity, out); err != nil {
@@ -227,15 +239,32 @@ func UnmarshalNaive(
 		n.price = val.(int64)
 	}
 
-	if orders, err := serialization.UnmarshalLinkedHashMap(
-		b,
-		serialization.UnmarshalInt64,
-		order.UnMarshal,
-	); err != nil {
+	val, err := serialization.UnmarshalInt32(b);
+
+	if  err != nil {
 		return nil, err
-	} else {
-		n.orders = orders
 	}
+
+	size := val.(int32)
+	linkedMap_ := linkedhashmap.New()
+
+	for size > 0 {
+		if k, err := serialization.UnmarshalInt64(b); err != nil {
+			return nil, err
+		} else {
+			ord := &order.Order{}
+
+			if err := ord.Unmarshal(b); err != nil {
+				return nil, err
+			} else {
+				linkedMap_.Put(k, ord)
+			}
+		}
+
+		size--
+	}
+
+	n.orders = linkedMap_
 
 	if val, err := serialization.UnmarshalInt64(b); err != nil {
 		return nil, err
