@@ -6,7 +6,7 @@ import (
 
 	"github.com/xerexchain/matching-engine/serialization"
 	"github.com/xerexchain/matching-engine/symbol"
-	balanceAdjType "github.com/xerexchain/matching-engine/user/balance/adjustment/t"
+	"github.com/xerexchain/matching-engine/user"
 )
 
 const (
@@ -68,7 +68,7 @@ type BalanceAdj struct {
 	Currency int32
 	Amount   int64
 	TXID     int64
-	balanceAdjType.T
+	user.BalanceAdjCategory
 	Metadata
 	_ struct{}
 }
@@ -192,7 +192,7 @@ func (c *BalanceAdj) Unmarshal(in *bytes.Buffer) error {
 		return err
 	}
 
-	t, ok := balanceAdjType.From(val.(int8))
+	cat, ok := user.BalanceAdjCategoryFrom(val.(int8))
 
 	if !ok {
 		return fmt.Errorf("failed to unmarshal balance adj type: %v", val)
@@ -202,7 +202,7 @@ func (c *BalanceAdj) Unmarshal(in *bytes.Buffer) error {
 	c.Currency = currency.(int32)
 	c.TXID = txid.(int64)
 	c.Amount = amount.(int64)
-	c.T = t
+	c.BalanceAdjCategory = cat
 
 	return nil
 }
@@ -356,7 +356,7 @@ func (c *BalanceAdj) Marshal(out *bytes.Buffer) error {
 		return err
 	}
 
-	if err := serialization.MarshalInt8(int8(c.T), out); err != nil {
+	if err := serialization.MarshalInt8(int8(c.BalanceAdjCategory), out); err != nil {
 		return err
 	}
 
