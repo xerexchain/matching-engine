@@ -4,19 +4,12 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/xerexchain/matching-engine/order"
-	orderType "github.com/xerexchain/matching-engine/order/t"
 	"github.com/xerexchain/matching-engine/serialization"
 	"github.com/xerexchain/matching-engine/symbol"
 	balanceAdjType "github.com/xerexchain/matching-engine/user/balance/adjustment/t"
 )
 
 const (
-	PlaceOrder_  int8 = 1
-	CancelOrder_ int8 = 2
-	MoveOrder_   int8 = 3
-	ReduceOrder_ int8 = 4
-
 	OrderBookRequest_ int8 = 6
 
 	AddUser_     int8 = 10
@@ -46,10 +39,6 @@ type Command interface {
 }
 
 var codeToNew = map[int8]func() Command{
-	PlaceOrder_:  newPlaceOrder,
-	CancelOrder_: newCancelOrder,
-	MoveOrder_:   newMoveOrder,
-	ReduceOrder_: newReduceOrder,
 	AddUser_:     newAddUser,
 	BalanceAdj_:  newBalanceAdj,
 	SuspendUser_: newSuspendUser,
@@ -60,57 +49,12 @@ var codeToNew = map[int8]func() Command{
 }
 
 // TODO rename?
+// rename everywhere used
 type Metadata struct {
 	Seq          int64
 	ServiceFlags int32
 	EventsGroup  int64
 	TimestampNs  int64
-}
-
-type PlaceOrder struct {
-	/*
-	 * When the order is not fully filled,
-	 * OrderId is used to insert new order into orderbook
-	 */
-	OrderId int64
-
-	UserId        int64
-	Price         int64
-	Quantity      int64
-	ReservedPrice int64
-	SymbolId      int32
-	UserCookie    int32
-	Timestamp     int64 // TODO make sure filled everywhere
-	order.Action
-	orderType.T
-	Metadata
-	_ struct{}
-}
-
-type CancelOrder struct {
-	OrderId  int64
-	UserId   int64
-	SymbolId int32
-	Metadata
-	_ struct{}
-}
-
-type MoveOrder struct {
-	OrderId  int64
-	UserId   int64
-	SymbolId int32
-	ToPrice  int64
-	Metadata
-	_ struct{}
-}
-
-type ReduceOrder struct {
-	OrderId   int64
-	UserId    int64
-	SymbolId  int32
-	Quanitity int64
-	Metadata
-	_ struct{}
 }
 
 type AddUser struct {
@@ -160,29 +104,6 @@ type Reset struct {
 	_ struct{}
 }
 
-func unmarshalUserIdSymbolIdOrderId(in *bytes.Buffer) (int64, int32, int64, error) {
-
-	userId, err := serialization.UnmarshalInt64(in)
-
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	symbolId, err := serialization.UnmarshalInt32(in)
-
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	orderId, err := serialization.UnmarshalInt64(in)
-
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	return userId.(int64), symbolId.(int32), orderId.(int64), nil
-}
-
 func (m *Metadata) Unmarshal(in *bytes.Buffer) error {
 	seq, err := serialization.UnmarshalInt64(in)
 
@@ -212,151 +133,6 @@ func (m *Metadata) Unmarshal(in *bytes.Buffer) error {
 	m.TimestampNs = timestampNs.(int64)
 	m.ServiceFlags = serviceFlags.(int32)
 	m.EventsGroup = eventsGroup.(int64)
-
-	return nil
-}
-
-func (c *PlaceOrder) Unmarshal(in *bytes.Buffer) error {
-	err := c.Metadata.Unmarshal(in)
-
-	if err != nil {
-		return err
-	}
-
-	userId, symbolId, orderId, err := unmarshalUserIdSymbolIdOrderId(in)
-
-	if err != nil {
-		return err
-	}
-
-	price, err := serialization.UnmarshalInt64(in)
-
-	if err != nil {
-		return err
-	}
-
-	reservedBidPrice, err := serialization.UnmarshalInt64(in)
-
-	if err != nil {
-		return err
-	}
-
-	quanitity, err := serialization.UnmarshalInt64(in)
-
-	if err != nil {
-		return err
-	}
-
-	userCookie, err := serialization.UnmarshalInt32(in)
-
-	if err != nil {
-		return err
-	}
-
-	val, err := serialization.UnmarshalInt8(in)
-
-	if err != nil {
-		return err
-	}
-
-	actAndType := val.(int8)
-	code := actAndType & 0b1
-	action, ok := order.ActionFrom(code)
-
-	if !ok {
-		return fmt.Errorf("failed to unmarshal action: %v", code)
-	}
-
-	code = (actAndType >> 1) & 0b1111
-	t, ok := orderType.From(code)
-
-	if !ok {
-		return fmt.Errorf("failed to unmarshal order type: %v", code)
-	}
-
-	c.OrderId = orderId
-	c.UserId = userId
-	c.Price = price.(int64)
-	c.Quantity = quanitity.(int64)
-	c.ReservedPrice = reservedBidPrice.(int64)
-	c.SymbolId = symbolId
-	c.UserCookie = userCookie.(int32)
-	c.Action = action
-	c.T = t
-
-	return nil
-}
-
-func (c *CancelOrder) Unmarshal(in *bytes.Buffer) error {
-	err := c.Metadata.Unmarshal(in)
-
-	if err != nil {
-		return err
-	}
-
-	userId, symbolId, orderId, err := unmarshalUserIdSymbolIdOrderId(in)
-
-	if err != nil {
-		return err
-	}
-
-	c.OrderId = orderId
-	c.UserId = userId
-	c.SymbolId = symbolId
-
-	return nil
-}
-
-func (c *MoveOrder) Unmarshal(in *bytes.Buffer) error {
-	err := c.Metadata.Unmarshal(in)
-
-	if err != nil {
-		return err
-	}
-
-	userId, symbolId, orderId, err := unmarshalUserIdSymbolIdOrderId(in)
-
-	if err != nil {
-		return err
-	}
-
-	toPrice, err := serialization.UnmarshalInt64(in)
-
-	if err != nil {
-		return err
-	}
-
-	c.OrderId = orderId
-	c.UserId = userId
-	c.SymbolId = symbolId
-	c.ToPrice = toPrice.(int64)
-
-	return nil
-}
-
-func (c *ReduceOrder) Unmarshal(in *bytes.Buffer) error {
-	err := c.Metadata.Unmarshal(in)
-
-	if err != nil {
-		return err
-	}
-
-	userId, symbolId, orderId, err := unmarshalUserIdSymbolIdOrderId(in)
-
-	if err != nil {
-		return err
-	}
-
-	quanitity, err := serialization.UnmarshalInt64(in)
-
-	if err != nil {
-		return err
-	}
-
-	c.OrderId = orderId
-	c.UserId = userId
-	c.SymbolId = symbolId
-	c.Quanitity = quanitity.(int64)
 
 	return nil
 }
@@ -527,139 +303,20 @@ func (c *Reset) Unmarshal(in *bytes.Buffer) error {
 	return nil
 }
 
-func marshalUserIdSymbolIdOrderId(
-	userId int64,
-	symbolId int32,
-	orderId int64,
-	out *bytes.Buffer,
-) error {
-	if err := serialization.MarshalInt64(userId, out); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt32(symbolId, out); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt64(orderId, out); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (m *Metadata) Marshal(out *bytes.Buffer) error {
-	if err := serialization.MarshalInt64(m.Seq, out); err != nil {
+	if err := serialization.WriteInt64(m.Seq, out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(m.TimestampNs, out); err != nil {
+	if err := serialization.WriteInt64(m.TimestampNs, out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt32(m.ServiceFlags, out); err != nil {
+	if err := serialization.WriteInt32(m.ServiceFlags, out); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(m.EventsGroup, out); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (c *PlaceOrder) Marshal(out *bytes.Buffer) error {
-	if err := c.Metadata.Marshal(out); err != nil {
-		return err
-	}
-
-	if err := marshalUserIdSymbolIdOrderId(
-		c.UserId,
-		c.SymbolId,
-		c.OrderId,
-		out,
-	); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt64(c.Price, out); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt64(c.ReservedPrice, out); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt64(c.Quantity, out); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt32(c.UserCookie, out); err != nil {
-		return err
-	}
-
-	actionAndType := (int8(c.T) << 1) | int8(c.Action)
-
-	if err := serialization.MarshalInt8(actionAndType, out); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (c *CancelOrder) Marshal(out *bytes.Buffer) error {
-	if err := c.Metadata.Marshal(out); err != nil {
-		return err
-	}
-
-	if err := marshalUserIdSymbolIdOrderId(
-		c.UserId,
-		c.SymbolId,
-		c.OrderId,
-		out,
-	); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (c *MoveOrder) Marshal(out *bytes.Buffer) error {
-	if err := c.Metadata.Marshal(out); err != nil {
-		return err
-	}
-
-	if err := marshalUserIdSymbolIdOrderId(
-		c.UserId,
-		c.SymbolId,
-		c.OrderId,
-		out,
-	); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt64(c.ToPrice, out); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (c *ReduceOrder) Marshal(out *bytes.Buffer) error {
-	if err := c.Metadata.Marshal(out); err != nil {
-		return err
-	}
-
-	if err := marshalUserIdSymbolIdOrderId(
-		c.UserId,
-		c.SymbolId,
-		c.OrderId,
-		out,
-	); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt64(c.Quanitity, out); err != nil {
+	if err := serialization.WriteInt64(m.EventsGroup, out); err != nil {
 		return err
 	}
 
@@ -771,22 +428,6 @@ func (c *Reset) Marshal(out *bytes.Buffer) error {
 	return nil
 }
 
-func (c *PlaceOrder) Metadata_() *Metadata {
-	return &(c.Metadata)
-}
-
-func (c *CancelOrder) Metadata_() *Metadata {
-	return &(c.Metadata)
-}
-
-func (c *MoveOrder) Metadata_() *Metadata {
-	return &(c.Metadata)
-}
-
-func (c *ReduceOrder) Metadata_() *Metadata {
-	return &(c.Metadata)
-}
-
 func (c *AddUser) Metadata_() *Metadata {
 	return &(c.Metadata)
 }
@@ -815,22 +456,6 @@ func (c *Reset) Metadata_() *Metadata {
 	return &(c.Metadata)
 }
 
-func (c *PlaceOrder) Code() int8 {
-	return PlaceOrder_
-}
-
-func (c *CancelOrder) Code() int8 {
-	return CancelOrder_
-}
-
-func (c *MoveOrder) Code() int8 {
-	return MoveOrder_
-}
-
-func (c *ReduceOrder) Code() int8 {
-	return ReduceOrder_
-}
-
 func (c *AddUser) Code() int8 {
 	return AddUser_
 }
@@ -857,22 +482,6 @@ func (c *AddSymbols) Code() int8 {
 
 func (c *Reset) Code() int8 {
 	return Reset_
-}
-
-func newPlaceOrder() Command {
-	return &PlaceOrder{}
-}
-
-func newCancelOrder() Command {
-	return &CancelOrder{}
-}
-
-func newMoveOrder() Command {
-	return &MoveOrder{}
-}
-
-func newReduceOrder() Command {
-	return &ReduceOrder{}
 }
 
 func newAddUser() Command {

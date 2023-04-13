@@ -6,9 +6,7 @@ import (
 	"log"
 
 	"github.com/google/btree"
-	"github.com/xerexchain/matching-engine/cmd"
 	"github.com/xerexchain/matching-engine/order"
-	"github.com/xerexchain/matching-engine/order/t"
 	"github.com/xerexchain/matching-engine/orderbook/event"
 	"github.com/xerexchain/matching-engine/orderbook/orderbucket"
 	resultcode "github.com/xerexchain/matching-engine/result_code"
@@ -35,12 +33,12 @@ type OrderBook interface {
 	Symbol() symbol.Symbol
 	NumAskBuckets() int32
 	NumBidBuckets() int32
-	PlaceGTC(*cmd.PlaceOrder) *MatcherResult
-	PlaceIOC(*cmd.PlaceOrder) *MatcherResult
-	PlaceFOKBudget(*cmd.PlaceOrder) *MatcherResult
-	Move(*cmd.MoveOrder) *MatcherResult     // TODO adjust balance
-	Reduce(*cmd.ReduceOrder) *MatcherResult // TODO adjust balance // Decrease the size of the order by specific number of lots
-	Cancel(*cmd.CancelOrder) *MatcherResult // TODO adjust balance
+	PlaceGTC(*order.Place) *MatcherResult
+	PlaceIOC(*order.Place) *MatcherResult
+	PlaceFOKBudget(*order.Place) *MatcherResult
+	Move(*order.Move) *MatcherResult     // TODO adjust balance
+	Reduce(*order.Reduce) *MatcherResult // TODO adjust balance // Decrease the size of the order by specific number of lots
+	Cancel(*order.Cancel) *MatcherResult // TODO adjust balance
 	UserOrders(int64) []*order.Order
 	AskOrders() []interface{} // TODO How to return []order.Order
 	BidOrders() []interface{} // TODO How to return []order.Order
@@ -150,21 +148,21 @@ func (n *naive) budgetToFill(
 }
 
 func (n *naive) tryMatchInstantly(
-	command *cmd.PlaceOrder,
+	command *order.Place,
 ) *MatcherResult {
-	pivot := orderbucket.NewDumpNaive(command.Price)
+	pivot := orderbucket.NewDumpNaive(command.Price())
 	emptyBucks := []orderbucket.Naive{}
 	var head, tail event.Trade
 
 	f := func(item btree.Item) bool {
-		if command.Quantity == 0 {
+		if command.Quantity() == 0 {
 			return false
 		}
 
 		buck := item.(orderbucket.Naive)
 		res := buck.Match(
-			command.Quantity,
-			command.ReservedPrice,
+			command.Quantity(),
+			command.ReservedPrice(),
 		)
 
 		for _, orderId := range res.RemovedOrders {
@@ -179,7 +177,7 @@ func (n *naive) tryMatchInstantly(
 
 		tail = res.EventTail
 
-		command.Quantity -= res.CollectedQuantity
+		command.Reduce(res.CollectedQuantity)
 
 		if buck.TotalQuantity() == 0 {
 			emptyBucks = append(emptyBucks, buck)
@@ -188,13 +186,13 @@ func (n *naive) tryMatchInstantly(
 		return true
 	}
 
-	if command.Action == order.Ask {
+	if command.Action() == order.Ask {
 		n.bidBuckets.AscendGreaterOrEqual(pivot, f)
 	} else {
 		n.askBuckets.DescendLessOrEqual(pivot, f)
 	}
 
-	targetBucks := n.oppositeBucketsTo(command.Action)
+	targetBucks := n.oppositeBucketsTo(command.Action())
 
 	// TODO Is it necessary?
 	for _, buck := range emptyBucks {
@@ -221,47 +219,47 @@ func (n *naive) NumBidBuckets() int32 {
 }
 
 func (n *naive) PlaceGTC(
-	gtc *cmd.PlaceOrder,
+	gtc *order.Place,
 ) *MatcherResult {
 	res := n.tryMatchInstantly(gtc)
 
-	if gtc.Quantity == 0 {
+	if gtc.Quantity() == 0 {
 		return res
 	}
 
-	if _, ok := n.orders[gtc.OrderId]; ok {
-		log.Printf("warn: duplicate order id: %v\n", gtc.OrderId)
+	if _, ok := n.orders[gtc.OrderID()]; ok {
+		log.Printf("warn: duplicate order id: %v\n", gtc.OrderID())
 
 		newHead := event.PrependReject(
 			res.EventHead,
-			gtc.OrderId,
-			gtc.Price,
-			gtc.Quantity,
-			gtc.Action,
+			gtc.OrderID(),
+			gtc.Price(),
+			gtc.Quantity(),
+			gtc.Action(),
 		)
 		res.EventHead = newHead
 
 		return res
 	}
 
-	targetBucks := n.sameBucketsAs(gtc.Action)
+	targetBucks := n.sameBucketsAs(gtc.Action())
 
-	buck, ok := n.findBucket(gtc.Price, targetBucks)
+	buck, ok := n.findBucket(gtc.Price(), targetBucks)
 
 	if !ok {
-		buck = orderbucket.NewNaive(gtc.Price)
+		buck = orderbucket.NewNaive(gtc.Price())
 		targetBucks.ReplaceOrInsert(buck)
 	}
 
 	ord := order.New(
-		gtc.OrderId,
-		gtc.UserId,
-		gtc.Price,
-		gtc.Quantity,
+		gtc.OrderID(),
+		gtc.UserID(),
+		gtc.Price(),
+		gtc.Quantity(),
 		0, // TODO
-		gtc.ReservedPrice,
-		gtc.Timestamp,
-		gtc.Action,
+		gtc.ReservedPrice(),
+		gtc.Timestamp(),
+		gtc.Action(),
 	)
 
 	buck.Put(ord)
@@ -271,20 +269,20 @@ func (n *naive) PlaceGTC(
 }
 
 func (n *naive) PlaceIOC(
-	ioc *cmd.PlaceOrder,
+	ioc *order.Place,
 ) *MatcherResult {
 	res := n.tryMatchInstantly(ioc)
 
-	if ioc.Quantity == 0 {
+	if ioc.Quantity() == 0 {
 		return res
 	}
 
 	newHead := event.PrependReject(
 		res.EventHead,
-		ioc.OrderId,
-		ioc.Price,
-		ioc.Quantity,
-		ioc.Action,
+		ioc.OrderID(),
+		ioc.Price(),
+		ioc.Quantity(),
+		ioc.Action(),
 	)
 	res.EventHead = newHead
 
@@ -292,21 +290,21 @@ func (n *naive) PlaceIOC(
 }
 
 func (n *naive) PlaceFOKBudget(
-	fok *cmd.PlaceOrder,
+	fok *order.Place,
 ) *MatcherResult {
-	budget, collected := n.budgetToFill(fok.Quantity, fok.Action)
+	budget, collected := n.budgetToFill(fok.Quantity(), fok.Action())
 
 	// TODO logic
-	if collected == fok.Quantity || ((fok.Price == budget) ||
-		((fok.Action == order.Ask) && (budget <= fok.Price)) ||
-		((fok.Action == order.Bid) && (budget > fok.Price))) {
+	if collected == fok.Quantity() || ((fok.Price() == budget) ||
+		((fok.Action() == order.Ask) && (budget <= fok.Price())) ||
+		((fok.Action() == order.Bid) && (budget > fok.Price()))) {
 		return n.tryMatchInstantly(fok)
 	} else {
 		e := event.NewReject(
-			fok.OrderId,
-			fok.Price,
-			fok.Quantity,
-			fok.Action,
+			fok.OrderID(),
+			fok.Price(),
+			fok.Quantity(),
+			fok.Action(),
 		)
 
 		return &MatcherResult{
@@ -319,10 +317,10 @@ func (n *naive) PlaceFOKBudget(
 
 // TODO order.uid != cmd.uid
 func (n *naive) Move(
-	command *cmd.MoveOrder,
+	command *order.Move,
 ) *MatcherResult {
-	orderId := command.OrderId
-	toPrice := command.ToPrice
+	orderId := command.OrderID()
+	toPrice := command.ToPrice()
 	ord, ok := n.orders[orderId]
 
 	if !ok {
@@ -345,26 +343,26 @@ func (n *naive) Move(
 		}
 	}
 
-	gtc := cmd.PlaceOrder{
-		OrderId:       ord.ID(),
-		UserId:        ord.UserID(),
-		Price:         toPrice,
-		Quantity:      ord.Remained(),
-		ReservedPrice: ord.ReservedBidPrice(), // TODO toPrice?
-		SymbolId:      n.symbol.Id(),
-		Action:        ord.Action(),
-		T:             t.GTC,
-		Timestamp:     ord.Timestamp(), // TODO current timestamp?
-	}
+	gtc := order.NewPlace(
+		ord.ID(),
+		ord.UserID(),
+		toPrice,
+		ord.Remained(),
+		ord.ReservedBidPrice(), // TODO toPrice?
+		n.symbol.Id(),
+		ord.Timestamp(), // TODO current timestamp?
+		ord.Action(),
+		order.GTC,
+	)
 
-	red := cmd.ReduceOrder{
-		OrderId:   ord.ID(),
-		SymbolId:  n.symbol.Id(),
-		Quanitity: ord.Remained(),
-	}
+	red := order.NewReduce(
+		ord.ID(),
+		n.symbol.Id(),
+		ord.Remained(),
+	)
 
-	reduceRes := n.Reduce(&red)
-	gtcRes := n.PlaceGTC(&gtc)
+	reduceRes := n.Reduce(red)
+	gtcRes := n.PlaceGTC(gtc)
 
 	reduceRes.EventTail.SetNext(gtcRes.EventHead)
 
@@ -377,10 +375,10 @@ func (n *naive) Move(
 
 // TODO order.uid != cmd.uid
 func (n *naive) Reduce(
-	command *cmd.ReduceOrder,
+	command *order.Reduce,
 ) *MatcherResult {
-	orderId := command.OrderId
-	quantity := command.Quanitity
+	orderID := command.OrderID()
+	quantity := command.Quantity()
 
 	if quantity <= 0 {
 		return &MatcherResult{
@@ -388,7 +386,7 @@ func (n *naive) Reduce(
 		}
 	}
 
-	ord, ok := n.orders[orderId]
+	ord, ok := n.orders[orderID]
 
 	if !ok {
 		return &MatcherResult{
@@ -419,8 +417,8 @@ func (n *naive) Reduce(
 	ord.Reduce(quantity)
 
 	if ord.Remained() == 0 {
-		delete(n.orders, orderId)
-		buck.Remove(orderId)
+		delete(n.orders, orderID)
+		buck.Remove(orderID)
 
 		if buck.TotalQuantity() == 0 {
 			targetBucks.Delete(buck)
@@ -428,7 +426,7 @@ func (n *naive) Reduce(
 	}
 
 	e := event.NewReduce(
-		orderId,
+		orderID,
 		ord.Remained() == 0,
 		ord.Price(),
 		quantity,
@@ -444,10 +442,10 @@ func (n *naive) Reduce(
 
 // TODO order.uid == cmd.uid
 func (n *naive) Cancel(
-	command *cmd.CancelOrder,
+	command *order.Cancel,
 ) *MatcherResult {
-	orderId := command.OrderId
-	ord, ok := n.orders[orderId]
+	orderID := command.OrderID()
+	ord, ok := n.orders[orderID]
 
 	if !ok {
 		return &MatcherResult{
@@ -455,13 +453,13 @@ func (n *naive) Cancel(
 		}
 	}
 
-	red := cmd.ReduceOrder{
-		OrderId:   ord.ID(),
-		SymbolId:  n.symbol.Id(),
-		Quanitity: ord.Remained(),
-	}
+	red := order.NewReduce(
+		ord.ID(),
+		n.symbol.Id(),
+		ord.Remained(),
+	)
 
-	return n.Reduce(&red)
+	return n.Reduce(red)
 }
 
 // TODO performance

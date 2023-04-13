@@ -199,7 +199,7 @@ func (o *Order) Unmarshal(in *bytes.Buffer) error {
 	action, ok := ActionFrom(code)
 
 	if !ok {
-		return fmt.Errorf("unmarshal: invalid action: %v", code)
+		return fmt.Errorf("unmarshal: action: %v", code)
 	}
 
 	userID, err := serialization.ReadInt64(in)
