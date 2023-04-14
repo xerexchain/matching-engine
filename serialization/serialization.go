@@ -6,7 +6,6 @@ import (
 	"reflect"
 
 	"github.com/emirpasic/gods/maps/linkedhashmap"
-	"github.com/google/btree"
 )
 
 type Marshalable interface {
@@ -243,57 +242,6 @@ func MarshalLinkedHashMap(
 	}
 
 	return nil
-}
-
-func UnmarshalBtree(
-	b *bytes.Buffer,
-	f func(*bytes.Buffer) (interface{}, error), // val unmarshaler
-) (*btree.BTree, error) {
-	var val interface{}
-	var err error
-
-	if val, err = ReadInt32(b); err != nil {
-		return nil, err
-	}
-
-	size := val.(int32)
-	btree_ := btree.New(4) // TODO param
-
-	for size > 0 {
-		if v, err := f(b); err != nil {
-			return nil, err
-		} else {
-			btree_.ReplaceOrInsert(v.(btree.Item))
-		}
-
-		size--
-	}
-
-	return btree_, nil
-}
-
-func MarshalBtree(
-	btree_ *btree.BTree,
-	out *bytes.Buffer,
-	f func(interface{}, *bytes.Buffer) error, // val marshaler
-) error {
-	size := int32(btree_.Len())
-
-	if err := WriteInt32(size, out); err != nil {
-		return err
-	}
-
-	var err error
-
-	btree_.Ascend(func(v btree.Item) bool {
-		if err = f(v, out); err != nil {
-			return false
-		}
-
-		return true
-	})
-
-	return err
 }
 
 func UnmarshalInt32Int64(b *bytes.Buffer) (map[int32]int64, error) {
