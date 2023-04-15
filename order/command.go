@@ -10,7 +10,7 @@ import (
 // TODO rename Place, Cancel, Move, Reduce
 // prepend or append Command?
 
-type _metadata struct {
+type Metadata struct {
 	seq          int64
 	serviceFlags int32
 	eventsGroup  int64
@@ -18,7 +18,7 @@ type _metadata struct {
 	_            struct{}
 }
 
-func (m *_metadata) Marshal(out *bytes.Buffer) error {
+func (m *Metadata) Marshal(out *bytes.Buffer) error {
 	if err := serialization.WriteInt64(m.seq, out); err != nil {
 		return err
 	}
@@ -38,7 +38,7 @@ func (m *_metadata) Marshal(out *bytes.Buffer) error {
 	return nil
 }
 
-func (m *_metadata) Unmarshal(in *bytes.Buffer) error {
+func (m *Metadata) Unmarshal(in *bytes.Buffer) error {
 	seq, err := serialization.ReadInt64(in)
 
 	if err != nil {
@@ -91,8 +91,8 @@ type Place struct {
 	userCookie    int32 // TODO expose this field? security
 	timestamp     int64 // TODO make sure filled everywhere
 	action        Action
-	category      _category
-	metadata      _metadata
+	category      Category
+	metadata      Metadata
 	_             struct{}
 }
 
@@ -105,7 +105,7 @@ func NewPlace(
 	symbolID int32,
 	timestamp int64,
 	action Action,
-	category _category,
+	category Category,
 ) *Place {
 	return &Place{
 		orderID:       orderID,
@@ -164,7 +164,7 @@ func (p *Place) Action() Action {
 	return p.action
 }
 
-func (p *Place) Category() _category {
+func (p *Place) Category() Category {
 	return p.category
 }
 
@@ -279,7 +279,7 @@ type Cancel struct {
 	orderID  int64
 	userID   int64
 	symbolID int32
-	metadata _metadata
+	metadata Metadata
 	_        struct{}
 }
 
@@ -343,7 +343,7 @@ type Move struct {
 	userID   int64
 	symbolID int32
 	toPrice  int64
-	metadata _metadata
+	metadata Metadata
 	_        struct{}
 }
 
@@ -424,7 +424,7 @@ type Reduce struct {
 
 	// quantity to be reduced, not to quantity
 	quantity int64
-	metadata _metadata
+	metadata Metadata
 	_        struct{}
 }
 

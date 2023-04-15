@@ -1,10 +1,10 @@
 package order
 
-type _category int8
+type Category int8
 
 const (
 	// GTC (Good till Cancel) - equivalent to regular limit order
-	GTC _category = iota + 1
+	GTC Category = iota + 1
 
 	// IOC (Immediate or Cancel) - equivalent to strict-risk market order
 	IOC       // with price cap
@@ -15,7 +15,7 @@ const (
 	FOCBudget // total amount cap
 )
 
-var _categories = map[int8]_category{
+var _categories = map[int8]Category{
 	int8(GTC):       GTC,
 	int8(IOC):       IOC,
 	int8(IOCBudget): IOCBudget,
@@ -23,7 +23,7 @@ var _categories = map[int8]_category{
 	int8(FOCBudget): FOCBudget,
 }
 
-func categoryFrom(code int8) (_category, bool) {
+func categoryFrom(code int8) (Category, bool) {
 	category, ok := _categories[code]
 
 	return category, ok
