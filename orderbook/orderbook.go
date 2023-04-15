@@ -15,7 +15,6 @@ import (
 )
 
 // FIX rece condition, concurrency
-// TODO role of symbol
 // TODO implement stateHash according to java impl in IOrderBook.java
 // TODO static CommandResultCode processCommand
 // TODO static IOrderBook create
@@ -152,7 +151,7 @@ func (n *naive) tryMatchInstantly(
 ) *MatcherResult {
 	pivot := bucket.With(command.Price())
 	emptyBucks := []*bucket.Bucket{}
-	var head, tail event.Trade
+	var head, tail *event.Trade
 
 	f := func(item btree.Item) bool {
 		if command.Quantity() == 0 {
@@ -170,12 +169,12 @@ func (n *naive) tryMatchInstantly(
 		}
 
 		if tail == nil {
-			head = res.EventHead
+			head = res.Head
 		} else {
-			tail.SetNext(res.EventHead)
+			tail.SetNext(res.Head)
 		}
 
-		tail = res.EventTail
+		tail = res.Tail
 
 		command.Reduce(res.CollectedQuantity)
 
@@ -230,14 +229,14 @@ func (n *naive) PlaceGTC(
 	if _, ok := n.orders[gtc.OrderID()]; ok {
 		log.Printf("warn: duplicate order id: %v\n", gtc.OrderID())
 
-		newHead := event.PrependReject(
-			res.EventHead,
+		e := event.NewReject(
 			gtc.OrderID(),
 			gtc.Price(),
 			gtc.Quantity(),
 			gtc.Action(),
 		)
-		res.EventHead = newHead
+		e.SetNext(res.EventHead)
+		res.EventHead = e
 
 		return res
 	}
@@ -277,14 +276,14 @@ func (n *naive) PlaceIOC(
 		return res
 	}
 
-	newHead := event.PrependReject(
-		res.EventHead,
+	e := event.NewReject(
 		ioc.OrderID(),
 		ioc.Price(),
 		ioc.Quantity(),
 		ioc.Action(),
 	)
-	res.EventHead = newHead
+	e.SetNext(res.EventHead)
+	res.EventHead = e
 
 	return res
 }

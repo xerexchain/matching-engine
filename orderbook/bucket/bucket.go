@@ -17,8 +17,8 @@ import (
 // TODO move to `orderbook` package?
 
 type MatcherResult struct {
-	EventHead         event.Trade
-	EventTail         event.Trade
+	Head              *event.Trade
+	Tail              *event.Trade
 	CollectedQuantity int64
 	RemovedOrders     []int64
 	_                 struct{}
@@ -119,7 +119,7 @@ func (buc *Bucket) Match(
 	var (
 		collected       int64
 		removedOrders   []int64
-		head, tail      event.Trade
+		head, tail      *event.Trade
 		bidderHoldPrice int64
 	)
 
@@ -173,8 +173,8 @@ func (buc *Bucket) Match(
 	}
 
 	return &MatcherResult{
-		EventHead:         head,
-		EventTail:         tail,
+		Head:              head,
+		Tail:              tail,
 		CollectedQuantity: collected,
 		RemovedOrders:     removedOrders,
 	}
