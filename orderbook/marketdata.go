@@ -1,7 +1,7 @@
 package orderbook
 
 const (
-	L2Size = 32
+	_l2Size = 32
 )
 
 // TODO equals overriden
@@ -16,6 +16,17 @@ type L2MarketData struct {
 	timestamp     int64
 	referenceSeq  int64
 	_             struct{}
+}
+
+func NewL2MarketData(askSize, bidSize int32) *L2MarketData {
+	return &L2MarketData{
+		askPrices:     make([]int64, askSize),
+		askQuantites:  make([]int64, askSize),
+		numAskOrders:  make([]int32, askSize),
+		bidPrices:     make([]int64, bidSize),
+		bidQuantities: make([]int64, bidSize),
+		numBidOrders:  make([]int32, bidSize),
+	}
 }
 
 func (l *L2MarketData) AskSize() int32 {
@@ -79,15 +90,4 @@ func (l *L2MarketData) SetBidQuantityAt(index int32, quantity int64) {
 }
 func (l *L2MarketData) SetNumBidOrdersAt(index int32, num int32) {
 	l.numBidOrders[index] = num
-}
-
-func NewL2MarketData(askSize, bidSize int32) *L2MarketData {
-	return &L2MarketData{
-		askPrices:     make([]int64, askSize),
-		askQuantites:  make([]int64, askSize),
-		numAskOrders:  make([]int32, askSize),
-		bidPrices:     make([]int64, bidSize),
-		bidQuantities: make([]int64, bidSize),
-		numBidOrders:  make([]int32, bidSize),
-	}
 }

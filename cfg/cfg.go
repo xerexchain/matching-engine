@@ -168,7 +168,7 @@ type Performance struct {
 	// private final ThreadFactory threadFactory; // TODO
 	// private final CoreWaitStrategy waitStrategy; // TODO
 
-	OrderBookFactory func(symbol.Symbol) orderbook.OrderBook
+	OrderBookFactory func(symbol.Symbol) *orderbook.Naive
 
 	CompressorFactory func() Compressor
 
