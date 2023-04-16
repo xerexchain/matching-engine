@@ -2,31 +2,31 @@ package position
 
 import "github.com/xerexchain/matching-engine/order"
 
-type direction int8
+type Direction int8
 
 const (
-	_long  direction = 1
-	_short direction = -1
-	_empty direction = 0
+	_long  Direction = 1
+	_short Direction = -1
+	_empty Direction = 0
 )
 
-var _int8ToDirection = map[int8]direction{
+var _directions = map[int8]Direction{
 	int8(_long):  _long,
 	int8(_short): _short,
 	int8(_empty): _empty,
 }
 
-func (d direction) isOppositeTo(action order.Action) bool {
+func (d Direction) isOppositeTo(action order.Action) bool {
 	return (d == _long && action == order.Ask) ||
 		(d == _short && action == order.Bid)
 }
 
-func (d direction) isSameAs(action order.Action) bool {
+func (d Direction) isSameAs(action order.Action) bool {
 	return (d == _long && action == order.Bid) ||
 		(d == _short && action == order.Ask)
 }
 
-func directionFromAction(action order.Action) direction {
+func directionFromAction(action order.Action) Direction {
 	if action == order.Bid {
 		return _long
 	} else {
@@ -34,6 +34,8 @@ func directionFromAction(action order.Action) direction {
 	}
 }
 
-func directionFromInt8(code int8) direction {
-	return _int8ToDirection[code]
+func directionFromCode(code int8) (Direction, bool) {
+	direction, ok := _directions[code]
+
+	return direction, ok
 }

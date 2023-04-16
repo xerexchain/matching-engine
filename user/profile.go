@@ -13,21 +13,21 @@ import (
 type Profile interface {
 	state.Hashable
 	serialization.Marshalable
-	MarginPositionOf(symbolId int32) (position.Margin, error)
+	MarginPositionOf(symbolId int32) (*position.Margin, error)
 }
 
 type profile struct {
 	UserId             int64
 	AdjustmentsCounter int64 // protects from double adjustment
 	Status
-	Balance         map[int32]int64           // currency -> balance
-	MarginPositions map[int32]position.Margin // symbolId -> margin position
+	Balance         map[int32]int64            // currency -> balance
+	MarginPositions map[int32]*position.Margin // symbolId -> margin position
 	_               struct{}
 }
 
 func (p *profile) MarginPositionOf(
 	symbolId int32,
-) (position.Margin, error) {
+) (*position.Margin, error) {
 	if pos, ok := p.MarginPositions[symbolId]; !ok {
 		return nil, fmt.Errorf("not found position for symbol %v", symbolId)
 	} else {
@@ -55,7 +55,7 @@ func NewProfile(userId int64, status Status) Profile {
 		UserId:          userId,
 		Status:          status,
 		Balance:         make(map[int32]int64),
-		MarginPositions: make(map[int32]position.Margin),
+		MarginPositions: make(map[int32]*position.Margin),
 	}
 }
 
@@ -67,13 +67,21 @@ func MarshalProfile(in interface{}, out *bytes.Buffer) error {
 		return err
 	}
 
-	if err := serialization.MarshalMap(
-		p.MarginPositions,
-		out,
-		serialization.MarshalInt32,
-		position.MarshalMargin,
-	); err != nil {
+	size := int32(len(p.MarginPositions))
+
+	if err := serialization.WriteInt32(size, out); err != nil {
 		return err
+	}
+
+	for symbolID, margin := range p.MarginPositions {
+
+		if err := serialization.WriteInt32(symbolID, out); err != nil {
+			return err
+		}
+
+		if err := margin.Marshal(out); err != nil {
+			return err
+		}
 	}
 
 	if err := serialization.MarshalInt64(p.AdjustmentsCounter, out); err != nil {
@@ -113,7 +121,7 @@ func UnmarshalProfile(b *bytes.Buffer) (interface{}, error) {
 	if positions, err := position.UnmarshalMargins(b); err != nil {
 		return nil, err
 	} else {
-		p.MarginPositions = positions.(map[int32]position.Margin)
+		p.MarginPositions = positions
 	}
 
 	if val, err := serialization.UnmarshalInt64(b); err != nil {
