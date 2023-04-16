@@ -12,6 +12,7 @@ import (
 	"github.com/xerexchain/matching-engine/resultcode"
 	"github.com/xerexchain/matching-engine/serialization"
 	"github.com/xerexchain/matching-engine/symbol"
+	// "github.com/xerexchain/matching-engine/symbol"
 )
 
 // FIX rece condition, concurrency
@@ -43,16 +44,22 @@ type _OrderBook interface {
 	FillBids(int32, *L2MarketData)
 }
 
+type Symbol interface {
+	serialization.Marshalable
+	serialization.Unmarshalable
+	ID() int32
+}
+
 // TODO rename `Naive` and `_naiveOrderBook`
 type Naive struct {
 	askBuckets *btree.BTree
 	bidBuckets *btree.BTree
-	symbol     symbol.Symbol
+	symbol     Symbol
 	orders     map[int64]*order.Order // used for reverse lookup
 	_          struct{}
 }
 
-func NewNaive(symbol_ symbol.Symbol) *Naive {
+func NewNaive(symbol_ Symbol) *Naive {
 	return &Naive{
 		askBuckets: btree.New(_btreeDegree),
 		bidBuckets: btree.New(_btreeDegree),
@@ -205,7 +212,7 @@ func (n *Naive) match(
 	}
 }
 
-func (n *Naive) Symbol() symbol.Symbol {
+func (n *Naive) Symbol() Symbol {
 	return n.symbol
 }
 
@@ -353,7 +360,7 @@ func (n *Naive) Move(
 		toPrice,
 		ord.Remained(),
 		ord.ReservedBidPrice(), // TODO toPrice?
-		n.symbol.Id(),
+		n.symbol.ID(),
 		ord.Timestamp(), // TODO current time?
 		ord.Action(),
 		order.GTC,
@@ -362,7 +369,7 @@ func (n *Naive) Move(
 	// TODO rename
 	reduce := order.NewReduce(
 		ord.ID(),
-		n.symbol.Id(),
+		n.symbol.ID(),
 		ord.Remained(),
 	)
 
@@ -461,7 +468,7 @@ func (n *Naive) Cancel(
 	// TODO rename
 	reduce := order.NewReduce(
 		ord.ID(),
-		n.symbol.Id(),
+		n.symbol.ID(),
 		ord.Remained(),
 	)
 
@@ -651,7 +658,7 @@ func (n *Naive) Unmarshal(in *bytes.Buffer) error {
 		return fmt.Errorf("Naive unmarshal: expected %v, got  %v", _naiveOrderBook, d)
 	}
 
-	symbol_, err := symbol.UnmarshalSymbol(in)
+	symbol_, err := symbol.Unmarshal(in)
 
 	if err != nil {
 		return err
@@ -725,7 +732,7 @@ func (n *Naive) Unmarshal(in *bytes.Buffer) error {
 
 	n.askBuckets = askBuckets
 	n.bidBuckets = bidBuckets
-	n.symbol = symbol_.(symbol.Symbol)
+	n.symbol = symbol_
 	n.orders = orders
 
 	return nil

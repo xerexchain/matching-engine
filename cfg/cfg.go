@@ -188,8 +188,8 @@ func DefaultPerformance() *Performance {
 		MaxGroupDurationNS: 10000,
 		SendL2ForEveryCMD:  false,
 		L2RefreshDepth:     8,
-		OrderBookFactory:   orderbook.NewNaive,
-		CompressorFactory:  newHighCompressor,
+		// OrderBookFactory:   orderbook.NewNaive,
+		CompressorFactory: newHighCompressor,
 	}
 	// TODO
 	// .threadFactory(Thread::new)

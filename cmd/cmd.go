@@ -48,6 +48,12 @@ var codeToNew = map[int8]func() Command{
 	Reset_:       newReset,
 }
 
+type Symbol interface {
+	serialization.Marshalable
+	serialization.Unmarshalable
+	ID() int32
+}
+
 // TODO rename?
 // rename everywhere used
 type Metadata struct {
@@ -94,7 +100,7 @@ type AddAccounts struct {
 
 // TODO EqualsAndHashCode overriden
 type AddSymbols struct {
-	Symbols map[interface{}]interface{} // map[int32]symbol.Symbol
+	Symbols map[int32]Symbol
 	Metadata
 	_ struct{}
 }
@@ -278,14 +284,28 @@ func (c *AddSymbols) Unmarshal(in *bytes.Buffer) error {
 	// 	return err
 	// }
 
-	symbols, err := serialization.UnmarshalMap(
-		in,
-		serialization.UnmarshalInt32,
-		symbol.UnmarshalSymbol,
-	)
+	size, err := serialization.ReadInt32(in)
 
 	if err != nil {
 		return err
+	}
+
+	symbols := make(map[int32]Symbol, size)
+
+	for ; size > 0; size-- {
+		symbolID, err := serialization.ReadInt32(in)
+
+		if err != nil {
+			return err
+		}
+
+		symbol_, err := symbol.Unmarshal(in)
+
+		if err != nil {
+			return err
+		}
+
+		symbols[symbolID] = symbol_
 	}
 
 	c.Symbols = symbols
@@ -412,12 +432,23 @@ func (c *AddSymbols) Marshal(out *bytes.Buffer) error {
 	// 	return err
 	// }
 
-	return serialization.MarshalMap(
-		c.Symbols,
-		out,
-		serialization.MarshalInt32,
-		symbol.MarshalSymbol,
-	)
+	size := int32(len(c.Symbols))
+
+	if err := serialization.WriteInt32(size, out); err != nil {
+		return err
+	}
+
+	for symbolID, symbol_ := range c.Symbols {
+		if err := serialization.WriteInt32(symbolID, out); err != nil {
+			return err
+		}
+
+		if err := symbol_.Marshal(out); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (c *Reset) Marshal(out *bytes.Buffer) error {
