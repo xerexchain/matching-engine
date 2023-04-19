@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"reflect"
-
-	"github.com/emirpasic/gods/maps/linkedhashmap"
 )
 
 type Marshalable interface {
@@ -191,85 +189,6 @@ func MarshalMap(
 	}
 
 	return nil
-}
-
-func UnmarshalLinkedHashMap(
-	b *bytes.Buffer,
-	f1 func(*bytes.Buffer) (interface{}, error), // key unmarshaler
-	f2 func(*bytes.Buffer) (interface{}, error), // val unmarshaler
-) (*linkedhashmap.Map, error) {
-	var val interface{}
-	var err error
-
-	if val, err = ReadInt32(b); err != nil {
-		return nil, err
-	}
-
-	size := val.(int32)
-	linkedMap_ := linkedhashmap.New()
-
-	for size > 0 {
-		if k, v, err := UnmarshalKeyVal(b, f1, f2); err != nil {
-			return nil, err
-		} else {
-			linkedMap_.Put(k, v)
-		}
-
-		size--
-	}
-
-	return linkedMap_, nil
-}
-
-func MarshalLinkedHashMap(
-	linkedMap *linkedhashmap.Map,
-	out *bytes.Buffer,
-	f1 func(interface{}, *bytes.Buffer) error, // key marshaler
-	f2 func(interface{}, *bytes.Buffer) error, // val marshaler
-) error {
-	size := int32(linkedMap.Size())
-
-	if err := WriteInt32(size, out); err != nil {
-		return err
-	}
-
-	for _, k := range linkedMap.Keys() {
-		v, _ := linkedMap.Get(k)
-
-		if err := MarshalKeyVal(k, v, out, f1, f2); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func UnmarshalInt32Int64(b *bytes.Buffer) (map[int32]int64, error) {
-	var val interface{}
-	var err error
-
-	if val, err = ReadInt32(b); err != nil {
-		return nil, err
-	}
-
-	size := val.(int32)
-	res := make(map[int32]int64, size)
-
-	for size > 0 {
-		if k, v, err := UnmarshalKeyVal(
-			b,
-			UnmarshalInt32,
-			UnmarshalInt64,
-		); err != nil {
-			return nil, err
-		} else {
-			res[k.(int32)] = v.(int64)
-		}
-
-		size--
-	}
-
-	return res, nil
 }
 
 func UnmarshalSlice(
