@@ -4,12 +4,17 @@ import (
 	"bytes"
 	"fmt"
 
+	"github.com/xerexchain/matching-engine/order"
 	"github.com/xerexchain/matching-engine/serialization"
 	"github.com/xerexchain/matching-engine/symbol"
 	"github.com/xerexchain/matching-engine/user"
 )
 
-const (
+var (
+	Place_            int8 = (&order.Place{}).Code()
+	Cancel_           int8 = (&order.Cancel{}).Code()
+	Move_             int8 = (&order.Move{}).Code()
+	Reduce_           int8 = (&order.Reduce{}).Code()
 	OrderBookRequest_ int8 = 6
 
 	AddUser_     int8 = 10
@@ -34,11 +39,18 @@ const (
 type Command interface {
 	serialization.Marshalable
 	serialization.Unmarshalable
-	Metadata_() *Metadata
+	Seq() int64
+	SetSeq(int64)
+	TimestampNS() int64
 	Code() int8
 }
 
-var codeToNew = map[int8]func() Command{
+// add order commands
+var _codeToNew = map[int8]func() Command{
+	Place_:       newPlace,
+	Cancel_:      newCancel,
+	Move_:        newMove,
+	Reduce_:      newReduce,
 	AddUser_:     newAddUser,
 	BalanceAdj_:  newBalanceAdj,
 	SuspendUser_: newSuspendUser,
@@ -459,32 +471,88 @@ func (c *Reset) Marshal(out *bytes.Buffer) error {
 	return nil
 }
 
-func (c *AddUser) Metadata_() *Metadata {
-	return &(c.Metadata)
+func (c *AddUser) TimestampNS() int64 {
+	return c.Metadata.TimestampNs
 }
 
-func (c *BalanceAdj) Metadata_() *Metadata {
-	return &(c.Metadata)
+func (c *BalanceAdj) TimestampNS() int64 {
+	return c.Metadata.TimestampNs
 }
 
-func (c *SuspendUser) Metadata_() *Metadata {
-	return &(c.Metadata)
+func (c *SuspendUser) TimestampNS() int64 {
+	return c.Metadata.TimestampNs
 }
 
-func (c *ResumeUser) Metadata_() *Metadata {
-	return &(c.Metadata)
+func (c *ResumeUser) TimestampNS() int64 {
+	return c.Metadata.TimestampNs
 }
 
-func (c *AddAccounts) Metadata_() *Metadata {
-	return &(c.Metadata)
+func (c *AddAccounts) TimestampNS() int64 {
+	return c.Metadata.TimestampNs
 }
 
-func (c *AddSymbols) Metadata_() *Metadata {
-	return &(c.Metadata)
+func (c *AddSymbols) TimestampNS() int64 {
+	return c.Metadata.TimestampNs
 }
 
-func (c *Reset) Metadata_() *Metadata {
-	return &(c.Metadata)
+func (c *Reset) TimestampNS() int64 {
+	return c.Metadata.TimestampNs
+}
+
+func (c *AddUser) Seq() int64 {
+	return c.Metadata.Seq
+}
+
+func (c *BalanceAdj) Seq() int64 {
+	return c.Metadata.Seq
+}
+
+func (c *SuspendUser) Seq() int64 {
+	return c.Metadata.Seq
+}
+
+func (c *ResumeUser) Seq() int64 {
+	return c.Metadata.Seq
+}
+
+func (c *AddAccounts) Seq() int64 {
+	return c.Metadata.Seq
+}
+
+func (c *AddSymbols) Seq() int64 {
+	return c.Metadata.Seq
+}
+
+func (c *Reset) Seq() int64 {
+	return c.Metadata.Seq
+}
+
+func (c *AddUser) SetSeq(seq int64) {
+	c.Metadata.Seq = seq
+}
+
+func (c *BalanceAdj) SetSeq(seq int64) {
+	c.Metadata.Seq = seq
+}
+
+func (c *SuspendUser) SetSeq(seq int64) {
+	c.Metadata.Seq = seq
+}
+
+func (c *ResumeUser) SetSeq(seq int64) {
+	c.Metadata.Seq = seq
+}
+
+func (c *AddAccounts) SetSeq(seq int64) {
+	c.Metadata.Seq = seq
+}
+
+func (c *AddSymbols) SetSeq(seq int64) {
+	c.Metadata.Seq = seq
+}
+
+func (c *Reset) SetSeq(seq int64) {
+	c.Metadata.Seq = seq
 }
 
 func (c *AddUser) Code() int8 {
@@ -513,6 +581,22 @@ func (c *AddSymbols) Code() int8 {
 
 func (c *Reset) Code() int8 {
 	return Reset_
+}
+
+func newPlace() Command {
+	return &order.Place{}
+}
+
+func newCancel() Command {
+	return &order.Cancel{}
+}
+
+func newMove() Command {
+	return &order.Move{}
+}
+
+func newReduce() Command {
+	return &order.Reduce{}
 }
 
 func newAddUser() Command {
@@ -544,7 +628,7 @@ func newReset() Command {
 }
 
 func From(code int8) (Command, bool) {
-	if f, ok := codeToNew[code]; ok {
+	if f, ok := _codeToNew[code]; ok {
 		return f(), true
 	}
 

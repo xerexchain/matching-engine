@@ -14,7 +14,7 @@ type Metadata struct {
 	seq          int64
 	serviceFlags int32
 	eventsGroup  int64
-	timestampNs  int64
+	timestampNS  int64
 	_            struct{}
 }
 
@@ -23,7 +23,7 @@ func (m *Metadata) Marshal(out *bytes.Buffer) error {
 		return err
 	}
 
-	if err := serialization.WriteInt64(m.timestampNs, out); err != nil {
+	if err := serialization.WriteInt64(m.timestampNS, out); err != nil {
 		return err
 	}
 
@@ -45,7 +45,7 @@ func (m *Metadata) Unmarshal(in *bytes.Buffer) error {
 		return err
 	}
 
-	timestampNs, err := serialization.ReadInt64(in)
+	timestampNS, err := serialization.ReadInt64(in)
 
 	if err != nil {
 		return err
@@ -64,7 +64,7 @@ func (m *Metadata) Unmarshal(in *bytes.Buffer) error {
 	}
 
 	m.seq = seq
-	m.timestampNs = timestampNs
+	m.timestampNS = timestampNS
 	m.serviceFlags = serviceFlags
 	m.eventsGroup = eventsGroup
 
@@ -166,6 +166,18 @@ func (p *Place) Action() Action {
 
 func (p *Place) Category() Category {
 	return p.category
+}
+
+func (p *Place) Seq() int64 {
+	return p.metadata.seq
+}
+
+func (p *Place) SetSeq(seq int64) {
+	p.metadata.seq = seq
+}
+
+func (p *Place) TimestampNS() int64 {
+	return p.metadata.timestampNS
 }
 
 func (p *Place) Marshal(out *bytes.Buffer) error {
@@ -303,6 +315,18 @@ func (c *Cancel) SymbolID() int32 {
 	return c.symbolID
 }
 
+func (p *Cancel) Seq() int64 {
+	return p.metadata.seq
+}
+
+func (p *Cancel) SetSeq(seq int64) {
+	p.metadata.seq = seq
+}
+
+func (p *Cancel) TimestampNS() int64 {
+	return p.metadata.timestampNS
+}
+
 func (c *Cancel) Marshal(out *bytes.Buffer) error {
 	if err := c.metadata.Marshal(out); err != nil {
 		return err
@@ -369,6 +393,18 @@ func (m *Move) SymbolID() int32 {
 
 func (m *Move) ToPrice() int64 {
 	return m.toPrice
+}
+
+func (p *Move) Seq() int64 {
+	return p.metadata.seq
+}
+
+func (p *Move) SetSeq(seq int64) {
+	p.metadata.seq = seq
+}
+
+func (p *Move) TimestampNS() int64 {
+	return p.metadata.timestampNS
 }
 
 func (m *Move) Marshal(out *bytes.Buffer) error {
@@ -458,6 +494,18 @@ func (r *Reduce) SymbolID() int32 {
 
 func (r *Reduce) Quantity() int64 {
 	return r.quantity
+}
+
+func (p *Reduce) Seq() int64 {
+	return p.metadata.seq
+}
+
+func (p *Reduce) SetSeq(seq int64) {
+	p.metadata.seq = seq
+}
+
+func (p *Reduce) TimestampNS() int64 {
+	return p.metadata.timestampNS
 }
 
 func (r *Reduce) Marshal(out *bytes.Buffer) error {
