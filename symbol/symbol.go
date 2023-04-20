@@ -2,59 +2,42 @@ package symbol
 
 import (
 	"bytes"
+	"fmt"
 
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/xerexchain/matching-engine/serialization"
 	"github.com/xerexchain/matching-engine/state"
 )
 
-// TODO equals overriden
-type Symbol interface {
+type _Symbol interface {
 	state.Hashable
 	serialization.Marshalable
+	serialization.Unmarshalable
+	ID() int32
 }
 
 // TODO equals overriden
-type FutureContract interface {
-	Symbol
-	MarginBuy() int64
-	MarginSell() int64
-}
-
-// TODO This is incompatible with exchange-core: `SymbolType.of(bytes.readByte());`
-// TODO This is incompatible with exchange-core: `bytes.writeByte(type.getCode());`
-// TODO equals overriden
-// TODO complete implementation
-type Option interface {
-	Symbol
-}
-
-type symbol struct {
-	Id_            int32
-	BaseCurrency_  int32
-	QuoteCurrency_ int32
-	BaseScaleK_    int64 // lot size
-	QuoteScaleK_   int64 // step size
+type Symbol struct {
+	id            int32
+	baseCurrency  int32
+	quoteCurrency int32
+	baseScaleK    int64 // lot size
+	quoteScaleK   int64 // step size
 
 	// TODO fees per lot in quote? currency units
-	TakerFee_ int64 // TODO check invariant: taker fee is not less than maker fee
-	MakerFee_ int64
-	_         struct{}
+	// TODO check invariant: taker fee is not less than maker fee
+	takerFee int64
+	makerFee int64
+	_        struct{}
 }
 
-type futureContract struct {
-	Symbol_     symbol
-	MarginBuy_  int64 // quote currency
-	MarginSell_ int64 // quote currency
-	_           struct{}
+func (s *Symbol) ID() int32 {
+	return s.id
 }
 
-type option struct {
-	Symbol_ symbol
-	_       struct{}
-}
-
-func (s *symbol) Hash() uint64 {
+// TODO unexported fields
+// TODO remove panic?
+func (s *Symbol) Hash() uint64 {
 	hash, err := hashstructure.Hash(*s, hashstructure.FormatV2, nil)
 
 	if err != nil {
@@ -64,19 +47,131 @@ func (s *symbol) Hash() uint64 {
 	return hash
 }
 
-func (s *symbol) Marshal(out *bytes.Buffer) error {
-	return MarshalSymbol(s, out)
+// TODO This is incompatible with exchange-core: `bytes.writeByte(type.getCode());`
+func (s *Symbol) Marshal(out *bytes.Buffer) error {
+	if err := serialization.WriteInt8(int8(_currencyExchangePair), out); err != nil {
+		return err
+	}
+
+	if err := serialization.WriteInt32(s.id, out); err != nil {
+		return err
+	}
+
+	if err := serialization.WriteInt32(s.baseCurrency, out); err != nil {
+		return err
+	}
+
+	if err := serialization.WriteInt32(s.quoteCurrency, out); err != nil {
+		return err
+	}
+
+	if err := serialization.WriteInt64(s.baseScaleK, out); err != nil {
+		return err
+	}
+
+	if err := serialization.WriteInt64(s.quoteScaleK, out); err != nil {
+		return err
+	}
+
+	if err := serialization.WriteInt64(s.takerFee, out); err != nil {
+		return err
+	}
+
+	if err := serialization.WriteInt64(s.makerFee, out); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func (f *futureContract) MarginBuy() int64 {
-	return f.MarginBuy_
+// TODO This is incompatible with exchange-core: `SymbolType.of(bytes.readByte());`
+func (s *Symbol) Unmarshal(in *bytes.Buffer) error {
+	code, err := serialization.ReadInt8(in)
+
+	if err != nil {
+		return err
+	}
+
+	if _, ok := categoryFrom(code); !ok {
+		return fmt.Errorf("Symbol.Unmarshal: category: %v", code)
+	}
+
+	id, err := serialization.ReadInt32(in)
+
+	if err != nil {
+		return err
+	}
+
+	baseCurrency, err := serialization.ReadInt32(in)
+
+	if err != nil {
+		return err
+	}
+
+	quoteCurrency, err := serialization.ReadInt32(in)
+
+	if err != nil {
+		return err
+	}
+
+	baseScaleK, err := serialization.ReadInt64(in)
+
+	if err != nil {
+		return err
+	}
+
+	quoteScaleK, err := serialization.ReadInt64(in)
+
+	if err != nil {
+		return err
+	}
+
+	takerFee, err := serialization.ReadInt64(in)
+
+	if err != nil {
+		return err
+	}
+
+	makerFee, err := serialization.ReadInt64(in)
+
+	if err != nil {
+		return err
+	}
+
+	s.id = id
+	s.baseCurrency = baseCurrency
+	s.quoteCurrency = quoteCurrency
+	s.baseScaleK = baseScaleK
+	s.quoteScaleK = quoteScaleK
+	s.takerFee = takerFee
+	s.makerFee = makerFee
+
+	return nil
 }
 
-func (f *futureContract) MarginSell() int64 {
-	return f.MarginSell_
+// TODO equals overriden
+type FutureContract struct {
+	symbol     Symbol
+	marginBuy  int64 // quote currency
+	marginSell int64 // quote currency
+	_          struct{}
 }
 
-func (f *futureContract) Hash() uint64 {
+func (s *FutureContract) ID() int32 {
+	return s.symbol.ID()
+}
+
+func (f *FutureContract) MarginBuy() int64 {
+	return f.marginBuy
+}
+
+func (f *FutureContract) MarginSell() int64 {
+	return f.marginSell
+}
+
+// TODO unexported fields
+// TODO remove panic?
+func (f *FutureContract) Hash() uint64 {
 	hash, err := hashstructure.Hash(*f, hashstructure.FormatV2, nil)
 
 	if err != nil {
@@ -86,132 +181,88 @@ func (f *futureContract) Hash() uint64 {
 	return hash
 }
 
-func (f *futureContract) Marshal(out *bytes.Buffer) error {
-	return MarshalFutureContract(f, out)
+func (f *FutureContract) Marshal(out *bytes.Buffer) error {
+	if err := serialization.WriteInt8(int8(_futureContract), out); err != nil {
+		return err
+	}
+
+	if err := f.symbol.Marshal(out); err != nil {
+		return err
+	}
+
+	if err := serialization.WriteInt64(f.marginBuy, out); err != nil {
+		return err
+	}
+
+	if err := serialization.WriteInt64(f.marginSell, out); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-// TODO This is incompatible with exchange-core: `bytes.writeByte(type.getCode());`
-func MarshalSymbol(in interface{}, out *bytes.Buffer) error {
-	s := in.(*symbol)
+func (f *FutureContract) Unmarshal(in *bytes.Buffer) error {
+	code, err := serialization.ReadInt8(in)
 
-	if err := serialization.MarshalInt32(s.Id_, out); err != nil {
+	if err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt32(s.BaseCurrency_, out); err != nil {
+	if _, ok := categoryFrom(code); !ok {
+		return fmt.Errorf("FutureContract.Unmarshal: category: %v", code)
+	}
+
+	symbol_ := &Symbol{}
+
+	if err := symbol_.Unmarshal(in); err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt32(s.QuoteCurrency_, out); err != nil {
+	marginBuy, err := serialization.ReadInt64(in)
+
+	if err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(s.BaseScaleK_, out); err != nil {
+	marginSell, err := serialization.ReadInt64(in)
+
+	if err != nil {
 		return err
 	}
 
-	if err := serialization.MarshalInt64(s.QuoteScaleK_, out); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt64(s.TakerFee_, out); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt64(s.MakerFee_, out); err != nil {
-		return err
-	}
+	f.symbol = *symbol_
+	f.marginBuy = marginBuy
+	f.marginSell = marginSell
 
 	return nil
 }
 
 // TODO This is incompatible with exchange-core: `SymbolType.of(bytes.readByte());`
-func UnmarshalSymbol(b *bytes.Buffer) (interface{}, error) {
-	s := symbol{}
-
-	if val, err := serialization.UnmarshalInt32(b); err != nil {
-		return nil, err
-	} else {
-		s.Id_ = val.(int32)
-	}
-
-	if val, err := serialization.UnmarshalInt32(b); err != nil {
-		return nil, err
-	} else {
-		s.BaseCurrency_ = val.(int32)
-	}
-
-	if val, err := serialization.UnmarshalInt32(b); err != nil {
-		return nil, err
-	} else {
-		s.QuoteCurrency_ = val.(int32)
-	}
-
-	if val, err := serialization.UnmarshalInt64(b); err != nil {
-		return nil, err
-	} else {
-		s.BaseScaleK_ = val.(int64)
-	}
-
-	if val, err := serialization.UnmarshalInt64(b); err != nil {
-		return nil, err
-	} else {
-		s.QuoteScaleK_ = val.(int64)
-	}
-
-	if val, err := serialization.UnmarshalInt64(b); err != nil {
-		return nil, err
-	} else {
-		s.TakerFee_ = val.(int64)
-	}
-
-	if val, err := serialization.UnmarshalInt64(b); err != nil {
-		return nil, err
-	} else {
-		s.MakerFee_ = val.(int64)
-	}
-
-	return &s, nil
+// TODO This is incompatible with exchange-core: `bytes.writeByte(type.getCode());`
+// TODO equals overriden
+// TODO complete implementation
+type Option struct {
+	symbol Symbol
+	_      struct{}
 }
 
-func MarshalFutureContract(in interface{}, out *bytes.Buffer) error {
-	f := in.(*futureContract)
+func Unmarshal(in *bytes.Buffer) (_Symbol, error) {
+	code, err := serialization.ReadInt8(in)
 
-	if err := MarshalSymbol(&(f.Symbol_), out); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt64(f.MarginBuy_, out); err != nil {
-		return err
-	}
-
-	if err := serialization.MarshalInt64(f.MarginSell_, out); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func UnmarshalFutureContract(b *bytes.Buffer) (interface{}, error) {
-	f := futureContract{}
-
-	if val, err := UnmarshalSymbol(b); err != nil {
+	if err != nil {
 		return nil, err
-	} else {
-		f.Symbol_ = *(val.(*symbol)) // TODO performance
 	}
 
-	if val, err := serialization.UnmarshalInt64(b); err != nil {
+	if _, ok := categoryFrom(code); !ok {
+		return nil, fmt.Errorf("Unmarshal: category: %v", code)
+	}
+
+	f := _factory[code]
+	symbol_ := f()
+
+	if err := symbol_.Unmarshal(in); err != nil {
 		return nil, err
-	} else {
-		f.MarginBuy_ = val.(int64)
 	}
 
-	if val, err := serialization.UnmarshalInt64(b); err != nil {
-		return nil, err
-	} else {
-		f.MarginSell_ = val.(int64)
-	}
-
-	return &f, nil
+	return symbol_, nil
 }

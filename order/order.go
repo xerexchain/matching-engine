@@ -4,228 +4,224 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-
-	"github.com/mitchellh/hashstructure/v2"
-	"github.com/xerexchain/matching-engine/order/action"
 	"github.com/xerexchain/matching-engine/serialization"
-	"github.com/xerexchain/matching-engine/state"
 )
 
-// TODO type (GTC,...), Symbol
-// TODO equals and hashCode overriden, timestamp ignored in equals, statehash impl
-type Order interface {
-	state.Hashable
-	serialization.Marshalable
-	Id() int64
-	UserId() int64
-	Price() int64
-	Filled() int64
-	Remained() int64
-	Fill(int64)
-	Reduce(int64)
-	Action() action.Action
-	ReservedBidPrice() int64
-	Timestamp() int64
-	String() string
+type QuantityError struct {
+	OrderID int64 `json:"orderId"`
+	Before  int64 `json:"before"`
+	After   int64 `json:"after"`
+	_       struct{}
 }
 
-// TODO equals and hashCode overriden, timestamp ignored in equals, statehash impl
-// No external references allowed to such object - order objects only live inside OrderBook.
-type order struct {
-	Id_               int64
-	UserId_           int64
-	Price_            int64
-	Quantity_         int64
-	Filled_           int64
-	ReservedBidPrice_ int64 // new orders - reserved price for fast moves of GTC bid orders in exchange mode // TODO logic
-	Timestamp_        int64
-	Action_           action.Action
-}
-
-func (o *order) Id() int64 {
-	return o.Id_
-}
-
-func (o *order) UserId() int64 {
-	return o.UserId_
-}
-
-func (o *order) Price() int64 {
-	return o.Price_
-}
-
-func (o *order) Filled() int64 {
-	return o.Filled_
-}
-
-func (o *order) Remained() int64 {
-	return o.Quantity_ - o.Filled_
-}
-
-func (o *order) Fill(quantity int64) {
-	o.Filled_ += quantity
-
-	if o.Quantity_ < 0 {
-		panic("Fill: reduced to less than zero")
-	}
-
-	if o.Filled_ > o.Quantity_ {
-		panic("Fill: filled more than quantity")
-	}
-}
-
-func (o *order) Reduce(quantity int64) {
-	o.Quantity_ -= quantity
-
-	if o.Quantity_ < 0 {
-		panic("Reduce: reduced to less than zero")
-	}
-
-	if o.Filled_ > o.Quantity_ {
-		panic("Reduce: filled more than quantity")
-	}
-}
-
-func (o *order) Action() action.Action {
-	return o.Action_
-}
-
-func (o *order) ReservedBidPrice() int64 {
-	return o.ReservedBidPrice_
-}
-
-func (o *order) Timestamp() int64 {
-	return o.Timestamp_
-}
-
-func (o *order) String() string {
-	b, _ := json.Marshal(o)
+func (e *QuantityError) Error() string {
+	b, _ := json.Marshal(e)
 
 	return string(b)
 }
 
-func (o *order) Hash() uint64 {
-	hash, err := hashstructure.Hash(*o, hashstructure.FormatV2, nil)
+/*
+ * `Category` is determined by `Command` (like `GTC`, etc).
+ * `Symbol` is determined by `Orderbook`.
+ * No external references allowed to such object.
+ * `Order`(s) only live inside `OrderBook`.
+ */
+// TODO equals and hashCode overriden, timestamp ignored in equals, statehash impl
+type Order struct {
+	id       int64
+	userID   int64
+	price    int64
+	quantity int64
+	filled   int64
 
-	if err != nil {
-		panic(err)
-	}
-
-	return hash
+	// new orders - reserved price for fast moves of `GTC` bid orders in exchange mode
+	// TODO logic
+	reservedBidPrice int64  `json:"reservedBidPrice"`
+	timestamp        int64  `json:"timestamp"`
+	action           Action `json:"action"`
+	_                struct{}
 }
 
-func (o *order) Marshal(out *bytes.Buffer) error {
-	return Marshal(o, out)
+func New(
+	id int64,
+	userID int64,
+	price int64,
+	quantity int64,
+	filled int64,
+	reservedBidPrice int64,
+	timestamp int64,
+	action Action,
+) *Order {
+	return &Order{
+		id:               id,
+		userID:           userID,
+		price:            price,
+		quantity:         quantity,
+		filled:           filled,
+		reservedBidPrice: reservedBidPrice,
+		timestamp:        timestamp,
+		action:           action,
+	}
 }
 
-func Marshal(in interface{}, out *bytes.Buffer) error {
-	o := in.(*order)
+func (o *Order) ID() int64 {
+	return o.id
+}
 
-	if err := serialization.MarshalInt64(o.Id_, out); err != nil {
+func (o *Order) UserID() int64 {
+	return o.userID
+}
+
+func (o *Order) Price() int64 {
+	return o.price
+}
+
+func (o *Order) ReservedBidPrice() int64 {
+	return o.reservedBidPrice
+}
+
+func (o *Order) Timestamp() int64 {
+	return o.timestamp
+}
+
+func (o *Order) Action() Action {
+	return o.action
+}
+
+func (o *Order) Remained() int64 {
+	return o.quantity - o.filled
+}
+
+func (o *Order) Fill(quantity int64) error {
+	after := o.filled + quantity
+
+	if after < 0 || after > o.quantity {
+		return &QuantityError{
+			OrderID: o.id,
+			Before:  o.quantity,
+			After:   after,
+		}
+	}
+
+	o.filled += quantity
+
+	return nil
+}
+
+func (o *Order) Reduce(quantity int64) error {
+	return o.Fill(-quantity)
+}
+
+// TODO Order fields are not exported.
+// func (o *Order) Hash() uint64 {
+// 	hash, err := hashstructure.Hash(*o, hashstructure.FormatV2, nil)
+
+// 	if err != nil {
+// 		panic(err)
+// 	}
+
+// 	return hash
+// }
+
+func (o *Order) Marshal(out *bytes.Buffer) error {
+	if err := serialization.WriteInt64(o.id, out); err != nil {
 		return err
 	}
-	if err := serialization.MarshalInt64(o.Price_, out); err != nil {
+
+	if err := serialization.WriteInt64(o.price, out); err != nil {
 		return err
 	}
-	if err := serialization.MarshalInt64(o.Quantity_, out); err != nil {
+
+	if err := serialization.WriteInt64(o.quantity, out); err != nil {
 		return err
 	}
-	if err := serialization.MarshalInt64(o.Filled_, out); err != nil {
+
+	if err := serialization.WriteInt64(o.filled, out); err != nil {
 		return err
 	}
-	if err := serialization.MarshalInt64(o.ReservedBidPrice_, out); err != nil {
+
+	if err := serialization.WriteInt64(o.reservedBidPrice, out); err != nil {
 		return err
 	}
-	if err := serialization.MarshalInt8(int8(o.Action_), out); err != nil {
+
+	if err := serialization.WriteInt8(int8(o.action), out); err != nil {
 		return err
 	}
-	if err := serialization.MarshalInt64(o.UserId_, out); err != nil {
+
+	if err := serialization.WriteInt64(o.userID, out); err != nil {
 		return err
 	}
-	if err := serialization.MarshalInt64(o.Timestamp_, out); err != nil {
+
+	if err := serialization.WriteInt64(o.timestamp, out); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func UnMarshal(b *bytes.Buffer) (interface{}, error) {
-	o := order{}
+func (o *Order) Unmarshal(in *bytes.Buffer) error {
+	id, err := serialization.ReadInt64(in)
 
-	if val, err := serialization.UnmarshalInt64(b); err != nil {
-		return nil, err
-	} else {
-		o.Id_ = val.(int64)
+	if err != nil {
+		return err
 	}
 
-	if val, err := serialization.UnmarshalInt64(b); err != nil {
-		return nil, err
-	} else {
-		o.Price_ = val.(int64)
+	price, err := serialization.ReadInt64(in)
+
+	if err != nil {
+		return err
 	}
 
-	if val, err := serialization.UnmarshalInt64(b); err != nil {
-		return nil, err
-	} else {
-		o.Quantity_ = val.(int64)
+	quantity, err := serialization.ReadInt64(in)
+
+	if err != nil {
+		return err
 	}
 
-	if val, err := serialization.UnmarshalInt64(b); err != nil {
-		return nil, err
-	} else {
-		o.Filled_ = val.(int64)
+	filled, err := serialization.ReadInt64(in)
+
+	if err != nil {
+		return err
 	}
 
-	if val, err := serialization.UnmarshalInt64(b); err != nil {
-		return nil, err
-	} else {
-		o.ReservedBidPrice_ = val.(int64)
+	reservedBidPrice, err := serialization.ReadInt64(in)
+
+	if err != nil {
+		return err
 	}
 
-	if val, err := serialization.UnmarshalInt8(b); err != nil {
-		return nil, err
-	} else {
-		if act, ok := action.From(val.(int8)); !ok {
-			return nil, fmt.Errorf("failed to unmarshal action: %v", val)
-		} else {
-			o.Action_ = act
-		}
+	code, err := serialization.ReadInt8(in)
 
+	if err != nil {
+		return err
 	}
 
-	if val, err := serialization.UnmarshalInt64(b); err != nil {
-		return nil, err
-	} else {
-		o.UserId_ = val.(int64)
+	action, ok := ActionFrom(code)
+
+	if !ok {
+		return fmt.Errorf("unmarshal: action: %v", code)
 	}
 
-	if val, err := serialization.UnmarshalInt64(b); err != nil {
-		return nil, err
-	} else {
-		o.Timestamp_ = val.(int64)
+	userID, err := serialization.ReadInt64(in)
+
+	if err != nil {
+		return err
 	}
 
-	return &o, nil
-}
+	timestamp, err := serialization.ReadInt64(in)
 
-func New(
-	id int64,
-	userId int64,
-	price int64,
-	quantity int64,
-	filled int64,
-	reservedBidPrice int64,
-	timestamp int64,
-	action action.Action,
-) Order {
-	return &order{
-		Id_:               id,
-		UserId_:           userId,
-		Price_:            price,
-		Quantity_:         quantity,
-		Filled_:           filled,
-		ReservedBidPrice_: reservedBidPrice,
-		Timestamp_:        timestamp,
-		Action_:           action,
+	if err != nil {
+		return err
 	}
+
+	o.id = id
+	o.price = price
+	o.quantity = quantity
+	o.filled = filled
+	o.reservedBidPrice = reservedBidPrice
+	o.action = action
+	o.userID = userID
+	o.timestamp = timestamp
+
+	return nil
 }

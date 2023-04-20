@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"reflect"
-
-	"github.com/emirpasic/gods/maps/linkedhashmap"
-	"github.com/google/btree"
 )
 
 type Marshalable interface {
@@ -37,6 +34,17 @@ func UnmarshalInt8(b *bytes.Buffer) (interface{}, error) {
 
 func MarshalInt8(in interface{}, out *bytes.Buffer) error {
 	return binary.Write(out, binary.LittleEndian, in.(int8))
+}
+
+func ReadInt8(in *bytes.Buffer) (int8, error) {
+	var res int8
+	err := binary.Read(in, binary.LittleEndian, &res)
+
+	return res, err
+}
+
+func WriteInt8(d int8, out *bytes.Buffer) error {
+	return binary.Write(out, binary.LittleEndian, d)
 }
 
 func UnmarshalUInt32(b *bytes.Buffer) (interface{}, error) {
@@ -70,6 +78,28 @@ func UnmarshalInt64(b *bytes.Buffer) (interface{}, error) {
 
 func MarshalInt64(in interface{}, out *bytes.Buffer) error {
 	return binary.Write(out, binary.LittleEndian, in.(int64))
+}
+
+func ReadInt32(b *bytes.Buffer) (int32, error) {
+	var res int32
+	err := binary.Read(b, binary.LittleEndian, &res)
+
+	return res, err
+}
+
+func WriteInt32(d int32, out *bytes.Buffer) error {
+	return binary.Write(out, binary.LittleEndian, d)
+}
+
+func ReadInt64(in *bytes.Buffer) (int64, error) {
+	var res int64
+	err := binary.Read(in, binary.LittleEndian, &res)
+
+	return res, err
+}
+
+func WriteInt64(d int64, out *bytes.Buffer) error {
+	return binary.Write(out, binary.LittleEndian, d)
 }
 
 func UnmarshalKeyVal(
@@ -114,7 +144,7 @@ func UnmarshalMap(
 	var val interface{}
 	var err error
 
-	if val, err = UnmarshalInt32(b); err != nil {
+	if val, err = ReadInt32(b); err != nil {
 		return nil, err
 	}
 
@@ -143,7 +173,7 @@ func MarshalMap(
 	map_ := reflect.ValueOf(in)
 	size := int32(map_.Len())
 
-	if err := MarshalInt32(size, out); err != nil {
+	if err := WriteInt32(size, out); err != nil {
 		return err
 	}
 
@@ -161,132 +191,48 @@ func MarshalMap(
 	return nil
 }
 
-func UnmarshalLinkedHashMap(
+func UnmarshalSlice(
 	b *bytes.Buffer,
-	f1 func(*bytes.Buffer) (interface{}, error), // key unmarshaler
-	f2 func(*bytes.Buffer) (interface{}, error), // val unmarshaler
-) (*linkedhashmap.Map, error) {
+	f func(*bytes.Buffer) (interface{}, error), // item unmarshaler
+) ([]interface{}, error) {
 	var val interface{}
 	var err error
 
-	if val, err = UnmarshalInt32(b); err != nil {
+	if val, err = ReadInt32(b); err != nil {
 		return nil, err
 	}
 
 	size := val.(int32)
-	linkedMap_ := linkedhashmap.New()
+	res := make([]interface{}, size)
 
-	for size > 0 {
-		if k, v, err := UnmarshalKeyVal(b, f1, f2); err != nil {
+	for idx := int32(0); idx < size; idx++ {
+		if item, err := f(b); err != nil {
 			return nil, err
 		} else {
-			linkedMap_.Put(k, v)
+			res[idx] = item
 		}
-
-		size--
 	}
 
-	return linkedMap_, nil
+	return res, nil
 }
 
-func MarshalLinkedHashMap(
-	linkedMap *linkedhashmap.Map,
+func MarshalSlice(
+	in interface{},
 	out *bytes.Buffer,
-	f1 func(interface{}, *bytes.Buffer) error, // key marshaler
-	f2 func(interface{}, *bytes.Buffer) error, // val marshaler
+	f func(interface{}, *bytes.Buffer) error, // item marshaler
 ) error {
-	size := int32(linkedMap.Size())
+	slice_ := reflect.ValueOf(in)
+	size := int32(slice_.Len())
 
-	if err := MarshalInt32(size, out); err != nil {
+	if err := WriteInt32(size, out); err != nil {
 		return err
 	}
 
-	for _, k := range linkedMap.Keys() {
-		v, _ := linkedMap.Get(k)
-
-		if err := MarshalKeyVal(k, v, out, f1, f2); err != nil {
+	for i := 0; i < int(size); i++ { // TODO int
+		if err := f(slice_.Index(i).Interface(), out); err != nil {
 			return err
 		}
 	}
 
 	return nil
-}
-
-func UnmarshalBtree(
-	b *bytes.Buffer,
-	f func(*bytes.Buffer) (interface{}, error), // val unmarshaler
-) (*btree.BTree, error) {
-	var val interface{}
-	var err error
-
-	if val, err = UnmarshalInt32(b); err != nil {
-		return nil, err
-	}
-
-	size := val.(int32)
-	btree_ := btree.New(4) // TODO param
-
-	for size > 0 {
-		if v, err := f(b); err != nil {
-			return nil, err
-		} else {
-			btree_.ReplaceOrInsert(v.(btree.Item))
-		}
-
-		size--
-	}
-
-	return btree_, nil
-}
-
-func MarshalBtree(
-	btree_ *btree.BTree,
-	out *bytes.Buffer,
-	f func(interface{}, *bytes.Buffer) error, // val marshaler
-) error {
-	size := int32(btree_.Len())
-
-	if err := MarshalInt32(size, out); err != nil {
-		return err
-	}
-
-	var err error
-
-	btree_.Ascend(func(v btree.Item) bool {
-		if err = f(v, out); err != nil {
-			return false
-		}
-
-		return true
-	})
-
-	return err
-}
-
-func UnmarshalInt32Int64(b *bytes.Buffer) (map[int32]int64, error) {
-	var val interface{}
-	var err error
-
-	if val, err = UnmarshalInt32(b); err != nil {
-		return nil, err
-	}
-
-	size := val.(int32)
-	res := make(map[int32]int64, size)
-
-	for size > 0 {
-		if k, v, err := UnmarshalKeyVal(
-			b,
-			UnmarshalInt32,
-			UnmarshalInt64,
-		); err != nil {
-			return nil, err
-		} else {
-			res[k.(int32)] = v.(int64)
-		}
-
-		size--
-	}
-
-	return res, nil
 }

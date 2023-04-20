@@ -1,6 +1,8 @@
 package resultcode
 
-type ResultCode int
+// TODO Merge into other packages?
+
+type ResultCode int32
 
 const (
 	New                    ResultCode = 0
@@ -21,7 +23,7 @@ const (
 	RiskAskPriceLowerThanFee    ResultCode = -2003
 	RiskMarginTradingDisabled   ResultCode = -2004
 
-	MatchingUnknownOrderId         ResultCode = -3002
+	MatchingUnknownOrderID         ResultCode = -3002
 	MatchingDuplicateOrderId       ResultCode = -3003
 	MatchingUnsupportedCommand     ResultCode = -3004
 	MatchingInvalidOrderBookId     ResultCode = -3005
@@ -30,7 +32,7 @@ const (
 
 	MatchingMoveRejectedDifferentPrice   ResultCode = -3040
 	MatchingMoveFailedPriceOverRiskLimit ResultCode = -3041
-	MatchingMoveFailedPriceInvalid       ResultCode = -3042 // TODO
+	MatchingMoveFailedPriceInvalid       ResultCode = -3042 // TODO added by me
 
 	MatchingReduceFailedWrongQuantity ResultCode = -3051
 
